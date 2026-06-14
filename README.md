@@ -28,6 +28,8 @@ Windows launcher:
 .\Launch-Sentinel-Simulation-Engine.ps1
 ```
 
+The Windows launcher opens the control panel in a dedicated browser window with an isolated local profile.
+
 ## How It Works
 
 The engine keeps one in-memory simulation state:

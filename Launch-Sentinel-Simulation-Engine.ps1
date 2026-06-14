@@ -18,6 +18,8 @@ $ServerProcess = $null
 $WatchdogProcess = $null
 $WatchdogStopFile = $null
 $WatchdogScriptFile = $null
+$BrowserProcess = $null
+$BrowserProfileDir = $null
 
 function Write-Status {
     param([string]$Message, [string]$Level = "INFO")
@@ -62,6 +64,29 @@ function Join-ProcessArguments {
     }) -join " ")
 }
 
+function Start-DedicatedBrowserWindow {
+    param([string]$Url)
+
+    $browserExe = Find-BrowserExecutable
+    if ($browserExe) {
+        Write-Status "Opening dedicated browser window"
+        $script:BrowserProfileDir = Join-Path ([System.IO.Path]::GetTempPath()) "SentinelSimulationEngine-Browser-$PID"
+        New-Item -ItemType Directory -Path $script:BrowserProfileDir -Force | Out-Null
+        $browserArgs = Join-ProcessArguments -Arguments @(
+            "--new-window",
+            "--app=$Url",
+            "--user-data-dir=$script:BrowserProfileDir",
+            "--no-first-run",
+            "--disable-background-mode"
+        )
+        return Start-Process -FilePath $browserExe -ArgumentList $browserArgs -PassThru
+    }
+
+    Write-Status "Opening default browser without dedicated profile" "WARN"
+    Start-Process $Url | Out-Null
+    return $null
+}
+
 function Wait-SimulationEngine {
     param([int]$Port, [int]$Seconds = 45)
     $deadline = (Get-Date).AddSeconds($Seconds)
@@ -79,6 +104,25 @@ function Wait-SimulationEngine {
 function Find-CommandPath {
     param([string[]]$Names)
     foreach ($name in $Names) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+    }
+    return $null
+}
+
+function Find-BrowserExecutable {
+    $candidates = @(
+        "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+        "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe",
+        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    foreach ($name in @("msedge.exe", "chrome.exe")) {
         $cmd = Get-Command $name -ErrorAction SilentlyContinue
         if ($cmd) { return $cmd.Source }
     }
@@ -173,6 +217,24 @@ function Stop-LauncherWatchdog {
     }
 }
 
+function Stop-BrowserWindow {
+    if ($BrowserProcess) {
+        try {
+            $current = Get-Process -Id $BrowserProcess.Id -ErrorAction SilentlyContinue
+            if ($current) {
+                $current.CloseMainWindow() | Out-Null
+                Start-Sleep -Milliseconds 500
+                $current = Get-Process -Id $BrowserProcess.Id -ErrorAction SilentlyContinue
+                if ($current) { Stop-Process -Id $current.Id -Force -ErrorAction SilentlyContinue }
+            }
+        } catch {
+        }
+    }
+    if ($BrowserProfileDir -and (Test-Path $BrowserProfileDir)) {
+        Remove-Item -LiteralPath $BrowserProfileDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if ($SmokeTest) {
     Write-Status "Running launcher smoke test"
     if (-not (Find-CommandPath -Names @("python.exe", "python"))) { throw "Python was not found." }
@@ -233,7 +295,7 @@ try {
 
     $url = "http://127.0.0.1:$Port"
     if (-not $NoBrowser) {
-        Start-Process $url | Out-Null
+        $BrowserProcess = Start-DedicatedBrowserWindow -Url $url
     }
 
     Write-Host ""
@@ -251,6 +313,7 @@ try {
     Write-Status $_.Exception.Message "ERROR"
     exit 1
 } finally {
+    Stop-BrowserWindow
     Stop-LauncherWatchdog
     if ($ServerProcess -and -not $ServerProcess.HasExited) {
         Stop-Process -Id $ServerProcess.Id -Force -ErrorAction SilentlyContinue
