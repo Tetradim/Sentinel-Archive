@@ -19,12 +19,15 @@ The engine can run by itself, stand in for Pulse, stand in for Edge, or serve bo
 | Edge facade | Serves `/api/live`, `/api/ready`, `/api/automation`, `/api/decisions`, `/api/pulse/handoff/schema`, `/api/pulse/account`, and `/api/pulse/positions`. |
 | Pulse facade | Serves `/api/health`, `/api/edge/status`, `/api/edge/account/status`, `/api/edge/tickers`, `/api/edge/positions/{symbol}`, legacy decision/trailing endpoints, and lightweight signal scoring. |
 | Tandem support | Can be used as both `EDGE_API_URL` and `PULSE_API_URL` so Tandem shows a full pair dashboard without live brokers. |
+| Discord options recorder | Records Discord option alerts, parsed contracts, market snapshots, drift flags, CSV imports, replay events, and timestamped channel-aware exports in SQLite. |
 | Control panel | Ships a React/Vite UI served by FastAPI after build, with execution settings, replay import/playback, handoff composer, positions, and decision/event tape. |
 | Windows launcher | Starts the engine, opens a dedicated browser profile, and now supports Pulse-style "one closes the other" cleanup between browser and process. |
 
 ## Safety Boundary
 
-The Simulation Engine is a paper/simulation-only process. It does not connect to brokers, does not place live orders, and does not persist account state across process restarts. It is meant for local replay, UI integration testing, Tandem demos, Edge/Pulse contract testing, and operator workflow validation before using real broker-connected services.
+The Simulation Engine is a paper/simulation-only process. It does not connect to brokers, does not place live orders, and does not persist simulated account state across process restarts. It is meant for local replay, UI integration testing, Tandem demos, Edge/Pulse contract testing, and operator workflow validation before using real broker-connected services.
+
+The Discord options recorder is also recorder-only. It captures alert and market data for later testing, but it does not call the handoff execution path, simulate fills, open positions, or replace the Consolidation bot's trading behavior.
 
 ## Local Work Folder
 
@@ -73,7 +76,9 @@ The engine keeps one in-memory simulation state:
 5. The account model recalculates cash, equity, buying power, positions, P&L, and risk exits.
 6. Edge-compatible and Pulse-compatible endpoints expose that same state to Tandem, Edge, or Pulse.
 
-Nothing is persisted yet. Restarting the process clears imported sessions, positions, idempotency keys, decisions, and logs.
+Core replay/account state is in memory. Restarting the process clears imported replay sessions, simulated positions, idempotency keys, decisions, and logs.
+
+Recorder data is persisted separately in SQLite at `data/simulation_engine.sqlite3`. This includes Discord messages, parsed option alerts, imported market observations, snapshots, drift events, and export metadata.
 
 ## Launcher Lifecycle
 
@@ -318,6 +323,125 @@ session_id = replay-{sha256(name + first timestamp + last timestamp + symbols + 
 ```
 
 The import also creates ticker records for the imported symbols.
+
+## Discord Options Recorder
+
+The recorder captures Discord option alerts and market observations for later bot testing. It does not execute trades, simulate positions, or connect to brokers.
+
+Recorded data is stored in:
+
+```text
+data/simulation_engine.sqlite3
+```
+
+Exports are written under:
+
+```text
+data/recordings/
+```
+
+Export folders and filenames include the date, channel ID, channel name, and export timestamp:
+
+```text
+data/recordings/2026-06-19/channel-123456789-alerts/20260619-143105-alerts.csv
+```
+
+Every alert export row includes Discord timestamp, engine receipt timestamp, guild/channel/author metadata, parsed contract fields, alert price, parse status, and normalized contract key. Discord bot tokens are masked in API responses and are never included in exports.
+
+### Discord Setup
+
+1. Create a bot in the Discord Developer Portal.
+2. Enable Message Content Intent for the bot.
+3. Invite the bot to the server with permissions to view channels and read message history.
+4. Add one or more channel IDs in the Discord Recorder panel.
+5. Save the recorder settings, then use `Test` and `Start`.
+
+You can also set the bot token with:
+
+```powershell
+$env:DISCORD_BOT_TOKEN="..."
+```
+
+If both the environment variable and saved setting are present, the saved setting is used.
+
+### Alert Parsing
+
+The parser is based on Consolidation's options alert formats. It recognizes buy/open, sell/trim/close, and average-down style alerts with contracts like:
+
+```text
+BTO SPY 500C 6/21 @ 1.25
+SELL 50% SPY 500 CALLS 6/21 @ 1.40
+```
+
+Unparsed messages are still stored. They are useful because they show which alert formats need new parser rules.
+
+### Market Data CSVs
+
+Stock price imports require:
+
+```csv
+timestamp,symbol,open,high,low,close,volume
+2026-06-19T14:29:00Z,SPY,540,541,539,540.5,1000
+```
+
+Option price imports require:
+
+```csv
+timestamp,underlying,expiration,strike,option_type,open,high,low,close,volume
+2026-06-19T14:29:00Z,SPY,6/21/2026,500,CALL,1.20,1.35,1.10,1.30,120
+```
+
+Optional option quote fields:
+
+```text
+bid,ask,mid,last,open_interest,implied_volatility,delta,theta
+```
+
+Option contract keys are normalized as:
+
+```text
+UNDERLYING|YYYY-MM-DD|STRIKE|CALL
+UNDERLYING|YYYY-MM-DD|STRIKE|PUT
+```
+
+### Price Drift
+
+When an alert contains an option price and matching option market data is available, the recorder stores:
+
+```text
+price_drift_amount = market_price_at_alert - alert_price
+price_drift_pct = (price_drift_amount / alert_price) * 100
+```
+
+`price_drift_alert` is true when either configured threshold is met:
+
+```text
+abs(price_drift_amount) >= drift_amount_threshold
+abs(price_drift_pct) >= drift_percent_threshold
+```
+
+Default thresholds are `$0.05` and `10%`.
+
+### Recorder API
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/recorder/discord/settings` | Read masked recorder settings |
+| PUT | `/api/recorder/discord/settings` | Save token, channels, drift thresholds, and provider flags |
+| POST | `/api/recorder/discord/test` | Check whether token/channels are configured |
+| POST | `/api/recorder/discord/start` | Start the Discord bot listener |
+| POST | `/api/recorder/discord/stop` | Stop the Discord bot listener |
+| GET | `/api/recorder/discord/status` | Recorder status and counts |
+| POST | `/api/recorder/discord/parse-preview` | Preview parser output for sample alert text |
+| POST | `/api/recorder/discord/import-csv` | Import historical Discord alert rows |
+| POST | `/api/recorder/market/import/options-csv` | Import option price observations |
+| POST | `/api/recorder/market/import/stocks-csv` | Import stock price observations |
+| GET | `/api/recordings/messages` | List recorded raw Discord messages |
+| GET | `/api/recordings/alerts` | List parsed/unparsed alert records |
+| GET | `/api/recordings/market-snapshots` | List alert-time market snapshots |
+| GET | `/api/recordings/drift-events` | List price drift events |
+| POST | `/api/recordings/export` | Write timestamped channel-aware CSV exports |
+| GET | `/api/replay/events` | Chronological truth stream for other bots |
 
 ## Playback
 
@@ -690,8 +814,8 @@ npm run build
 python -m unittest tests.test_launcher_lifecycle_static -v
 ```
 
-Expected current backend test result:
+Expected backend result:
 
 ```text
-10 passed
+all tests pass
 ```
