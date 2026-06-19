@@ -3,9 +3,13 @@ import {
   Activity,
   ArrowRightLeft,
   Banknote,
+  Database,
+  Download,
   FileUp,
+  MessageSquare,
   Pause,
   Play,
+  PlugZap,
   RadioTower,
   RotateCcw,
   Save,
@@ -14,17 +18,21 @@ import {
   SlidersHorizontal,
   Upload,
 } from 'lucide-react';
-import { api, type SimulationConfig, type SimulationSnapshot } from './api';
+import { api, type ExportRecord, type ParsedAlert, type PriceDriftEvent, type RecorderSettings, type RecorderStatus, type SimulationConfig, type SimulationSnapshot } from './api';
 
 const emptyCsv = 'timestamp,symbol,open,high,low,close,volume\n';
+const emptyDiscordCsv = 'message_id,channel_id,channel_name,author_id,author_name,discord_timestamp,content\n';
+const emptyOptionCsv = 'timestamp,underlying,expiration,strike,option_type,open,high,low,close,volume,bid,ask,last\n';
 
 function money(value: unknown) {
+  if (value === null || value === undefined || value === '') return 'Unavailable';
   const number = Number(value);
   if (!Number.isFinite(number)) return 'Unavailable';
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(number);
 }
 
 function number(value: unknown, digits = 2) {
+  if (value === null || value === undefined || value === '') return 'Unavailable';
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 'Unavailable';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(parsed);
@@ -48,10 +56,33 @@ export function App() {
   const [trail, setTrail] = React.useState(2);
   const [status, setStatus] = React.useState('Idle');
   const [error, setError] = React.useState('');
+  const [recorderSettings, setRecorderSettings] = React.useState<RecorderSettings | null>(null);
+  const [recorderStatus, setRecorderStatus] = React.useState<RecorderStatus | null>(null);
+  const [previewText, setPreviewText] = React.useState('BTO SPY 500C 6/21 @ 1.25');
+  const [previewAlert, setPreviewAlert] = React.useState<ParsedAlert | null>(null);
+  const [discordCsvText, setDiscordCsvText] = React.useState(emptyDiscordCsv);
+  const [optionsCsvText, setOptionsCsvText] = React.useState(emptyOptionCsv);
+  const [stocksCsvText, setStocksCsvText] = React.useState(emptyCsv);
+  const [recorderAlerts, setRecorderAlerts] = React.useState<ParsedAlert[]>([]);
+  const [driftEvents, setDriftEvents] = React.useState<PriceDriftEvent[]>([]);
+  const [exportChannelId, setExportChannelId] = React.useState('');
+  const [exports, setExports] = React.useState<ExportRecord[]>([]);
 
   const refresh = React.useCallback(async () => {
-    const next = await api.state();
+    const [next, settings, recorder, alerts, drift, exportList] = await Promise.all([
+      api.state(),
+      api.recorderSettings(),
+      api.recorderStatus(),
+      api.recorderAlerts(),
+      api.recorderDriftEvents(),
+      api.recorderExports(),
+    ]);
     setSnapshot(next);
+    setRecorderSettings(settings);
+    setRecorderStatus(recorder);
+    setRecorderAlerts(alerts.alerts);
+    setDriftEvents(drift.drift_events);
+    setExports(exportList.exports);
     setConfigDraft((current) => current ?? next.config);
     if (!selectedSession && next.sessions[0]) setSelectedSession(next.sessions[0].session_id);
   }, [selectedSession]);
@@ -87,6 +118,10 @@ export function App() {
     setConfigDraft((current) => (current ? { ...current, [key]: value } : current));
   }
 
+  function updateRecorder<K extends keyof RecorderSettings>(key: K, value: RecorderSettings[K]) {
+    setRecorderSettings((current) => (current ? { ...current, [key]: value } : current));
+  }
+
   function handoffPayload() {
     const normalized = symbol.trim().toUpperCase() || 'SPY';
     const stopType = action.includes('trailing') ? 'trailing' : action === 'regular_stop' ? 'regular' : undefined;
@@ -108,6 +143,8 @@ export function App() {
   }
 
   const positions = Object.values(snapshot?.account.positions ?? {});
+  const driftByAlert = React.useMemo(() => new Map(driftEvents.map((event) => [event.alert_id, event])), [driftEvents]);
+  const latestExport = exports[0];
 
   return (
     <div className="app">
@@ -183,6 +220,113 @@ export function App() {
           </div>
         </section>
 
+        <section className="panel tall">
+          <PanelHeader icon={<MessageSquare size={16} />} title="Discord Recorder" />
+          {recorderSettings ? (
+            <div className="stack">
+              <div className="recorder-status">
+                <Badge tone={recorderStatus?.discord_connected ? 'good' : recorderStatus?.discord_state === 'failed' ? 'bad' : 'neutral'} label={recorderStatus?.discord_state || 'stopped'} />
+                <span>{number(recorderStatus?.messages_recorded, 0)} messages</span>
+                <span>{number(recorderStatus?.parsed_alerts, 0)} parsed</span>
+                <span>{number(recorderStatus?.drift_alerts, 0)} drift flags</span>
+              </div>
+              <label className="field">
+                <span>Bot token</span>
+                <input type="password" value={recorderSettings.discord_token} onChange={(event) => updateRecorder('discord_token', event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Channel IDs</span>
+                <textarea
+                  className="compact-textarea"
+                  value={recorderSettings.discord_channel_ids.join('\n')}
+                  onChange={(event) => updateRecorder('discord_channel_ids', event.target.value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean))}
+                  spellCheck={false}
+                />
+              </label>
+              <div className="form-grid compact">
+                <NumberField label="Drift $" value={recorderSettings.drift_amount_threshold} step={0.01} onChange={(value) => updateRecorder('drift_amount_threshold', value)} />
+                <NumberField label="Drift %" value={recorderSettings.drift_percent_threshold} onChange={(value) => updateRecorder('drift_percent_threshold', value)} />
+                <label className="check">
+                  <input type="checkbox" checked={recorderSettings.record_all_channels} onChange={(event) => updateRecorder('record_all_channels', event.target.checked)} />
+                  <span>All channels</span>
+                </label>
+                <label className="check">
+                  <input type="checkbox" checked={recorderSettings.yfinance_enabled} onChange={(event) => updateRecorder('yfinance_enabled', event.target.checked)} />
+                  <span>Live quotes</span>
+                </label>
+              </div>
+              <div className="button-row">
+                <button className="primary" type="button" onClick={() => run('Saving recorder', () => api.updateRecorderSettings(recorderSettings))}>
+                  <Save size={15} />
+                  Save
+                </button>
+                <button type="button" onClick={() => run('Testing recorder', api.testDiscordRecorder)}>
+                  <PlugZap size={15} />
+                  Test
+                </button>
+                <button type="button" onClick={() => run('Starting recorder', api.startDiscordRecorder)}>
+                  <Play size={15} />
+                  Start
+                </button>
+                <button type="button" onClick={() => run('Stopping recorder', api.stopDiscordRecorder)}>
+                  <Pause size={15} />
+                  Stop
+                </button>
+              </div>
+              <label className="field">
+                <span>Parse preview</span>
+                <textarea className="compact-textarea" value={previewText} onChange={(event) => setPreviewText(event.target.value)} spellCheck={false} />
+              </label>
+              <button type="button" onClick={() => run('Previewing parser', async () => setPreviewAlert(await api.parsePreview(previewText)))}>
+                <MessageSquare size={15} />
+                Preview
+              </button>
+              <pre className="json-preview">{previewAlert ? JSON.stringify(previewAlert, null, 2) : 'No preview yet'}</pre>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="panel tall">
+          <PanelHeader icon={<Database size={16} />} title="Recorder Imports" />
+          <div className="stack">
+            <label className="field">
+              <span>Discord alert CSV</span>
+              <textarea className="compact-textarea" value={discordCsvText} onChange={(event) => setDiscordCsvText(event.target.value)} spellCheck={false} />
+            </label>
+            <button type="button" onClick={() => run('Importing Discord CSV', () => api.importDiscordCsv(discordCsvText))}>
+              <Upload size={15} />
+              Import Alerts
+            </button>
+            <label className="field">
+              <span>Option price CSV</span>
+              <textarea className="compact-textarea" value={optionsCsvText} onChange={(event) => setOptionsCsvText(event.target.value)} spellCheck={false} />
+            </label>
+            <button type="button" onClick={() => run('Importing option prices', () => api.importOptionsCsv(optionsCsvText))}>
+              <Database size={15} />
+              Import Options
+            </button>
+            <label className="field">
+              <span>Stock price CSV</span>
+              <textarea className="compact-textarea" value={stocksCsvText} onChange={(event) => setStocksCsvText(event.target.value)} spellCheck={false} />
+            </label>
+            <button type="button" onClick={() => run('Importing stock prices', () => api.importStocksCsv(stocksCsvText))}>
+              <Database size={15} />
+              Import Stocks
+            </button>
+            <div className="export-row">
+              <label className="field">
+                <span>Export channel</span>
+                <input value={exportChannelId} onChange={(event) => setExportChannelId(event.target.value)} placeholder="123456789" />
+              </label>
+              <button className="primary" type="button" onClick={() => run('Exporting alerts', () => api.exportRecordings(exportChannelId))}>
+                <Download size={15} />
+                Export
+              </button>
+            </div>
+            <p className="path-readout">{latestExport ? latestExport.file_path : 'No exports yet'}</p>
+          </div>
+        </section>
+
         <section className="panel">
           <PanelHeader icon={<Play size={16} />} title="Playback" />
           <div className="form-grid compact">
@@ -246,6 +390,29 @@ export function App() {
                 <span>{position.trailing_enabled ? `${position.trailing_percent}%` : 'Off'}</span>
               </div>
             )) : <div className="empty">No positions</div>}
+          </div>
+        </section>
+
+        <section className="panel wide-panel">
+          <PanelHeader icon={<MessageSquare size={16} />} title="Recorded Alerts" />
+          <div className="alert-table">
+            <div className="alert-row head">
+              <span>Status</span><span>Action</span><span>Contract</span><span>Alert</span><span>Market</span><span>Drift</span>
+            </div>
+            {recorderAlerts.length ? recorderAlerts.slice(0, 12).map((alert) => {
+              const drift = driftByAlert.get(alert.message_id);
+              const contract = [alert.ticker, alert.expiration, alert.strike, alert.option_type].filter(Boolean).join(' ');
+              return (
+                <div className="alert-row" key={alert.message_id}>
+                  <span className={alert.parse_status === 'parsed' ? 'good' : 'bad'}>{alert.parse_status}</span>
+                  <span>{alert.action || 'capture'}</span>
+                  <span>{contract || 'Unparsed'}</span>
+                  <span>{money(alert.alert_price)}</span>
+                  <span>{money(drift?.market_price)}</span>
+                  <span className={drift?.price_drift_alert ? 'bad' : 'good'}>{drift ? `${number(drift.price_drift_amount)} / ${number(drift.price_drift_pct)}%` : 'Unavailable'}</span>
+                </div>
+              );
+            }) : <div className="empty">No recorded alerts</div>}
           </div>
         </section>
 

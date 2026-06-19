@@ -63,6 +63,63 @@ export type SimulationSnapshot = {
   event_log: Array<Record<string, unknown>>;
 };
 
+export type RecorderSettings = {
+  discord_token: string;
+  discord_channel_ids: string[];
+  drift_amount_threshold: number;
+  drift_percent_threshold: number;
+  yfinance_enabled: boolean;
+  record_all_channels: boolean;
+};
+
+export type RecorderStatus = {
+  discord_connected: boolean;
+  discord_state: string;
+  monitored_channels: string[];
+  messages_recorded: number;
+  parsed_alerts: number;
+  unparsed_alerts: number;
+  drift_alerts: number;
+  last_message_timestamp?: string | null;
+  last_error: string;
+};
+
+export type ParsedAlert = {
+  message_id: string;
+  parse_status: 'parsed' | 'unparsed' | 'error';
+  raw_text: string;
+  parse_error?: string;
+  action?: string | null;
+  ticker?: string | null;
+  expiration?: string | null;
+  strike?: number | null;
+  option_type?: string | null;
+  alert_price?: number | null;
+  sell_percentage?: number | null;
+  confidence?: string;
+  normalized?: Record<string, unknown>;
+};
+
+export type PriceDriftEvent = {
+  alert_id: string;
+  alert_price?: number | null;
+  market_price?: number | null;
+  price_drift_amount?: number | null;
+  price_drift_pct?: number | null;
+  drift_direction: string;
+  price_drift_alert: boolean;
+};
+
+export type ExportRecord = {
+  export_id: string;
+  created_at: string;
+  channel_id: string;
+  channel_name: string;
+  format: 'csv' | 'jsonl';
+  file_path: string;
+  row_count: number;
+};
+
 export async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
@@ -105,4 +162,43 @@ export const api = {
       headers: { 'X-API-Key': 'local-sim-key' },
       body: JSON.stringify(payload),
     }),
+  recorderSettings: () => requestJson<RecorderSettings>('/api/recorder/discord/settings'),
+  updateRecorderSettings: (settings: RecorderSettings) =>
+    requestJson<RecorderSettings>('/api/recorder/discord/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  recorderStatus: () => requestJson<RecorderStatus>('/api/recorder/discord/status'),
+  testDiscordRecorder: () => requestJson<Record<string, unknown>>('/api/recorder/discord/test', { method: 'POST', body: '{}' }),
+  startDiscordRecorder: () => requestJson<RecorderStatus>('/api/recorder/discord/start', { method: 'POST', body: '{}' }),
+  stopDiscordRecorder: () => requestJson<RecorderStatus>('/api/recorder/discord/stop', { method: 'POST', body: '{}' }),
+  parsePreview: (rawText: string) =>
+    requestJson<ParsedAlert>('/api/recorder/discord/parse-preview', {
+      method: 'POST',
+      body: JSON.stringify({ raw_text: rawText }),
+    }),
+  importDiscordCsv: (csvText: string) =>
+    requestJson<{ inserted: number; rows: number }>('/api/recorder/discord/import-csv', {
+      method: 'POST',
+      body: JSON.stringify({ csv_text: csvText }),
+    }),
+  importOptionsCsv: (csvText: string) =>
+    requestJson<{ inserted: number }>('/api/recorder/market/import/options-csv', {
+      method: 'POST',
+      body: JSON.stringify({ csv_text: csvText }),
+    }),
+  importStocksCsv: (csvText: string) =>
+    requestJson<{ inserted: number }>('/api/recorder/market/import/stocks-csv', {
+      method: 'POST',
+      body: JSON.stringify({ csv_text: csvText }),
+    }),
+  recorderAlerts: () => requestJson<{ alerts: ParsedAlert[] }>('/api/recordings/alerts?limit=50'),
+  recorderDriftEvents: () => requestJson<{ drift_events: PriceDriftEvent[] }>('/api/recordings/drift-events?limit=50'),
+  recorderExports: () => requestJson<{ exports: ExportRecord[] }>('/api/recordings/exports?limit=20'),
+  exportRecordings: (channelId?: string) =>
+    requestJson<ExportRecord>('/api/recordings/export', {
+      method: 'POST',
+      body: JSON.stringify({ channel_id: channelId || null }),
+    }),
+  replayEvents: () => requestJson<{ events: Array<Record<string, unknown>> }>('/api/replay/events?limit=100'),
 };

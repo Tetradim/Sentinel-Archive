@@ -242,6 +242,10 @@ textarea {
   font-size: 11px;
 }
 
+textarea.compact-textarea {
+  min-height: 74px;
+}
+
 .primary {
   border-color: rgba(57, 208, 159, 0.42);
   background: rgba(57, 208, 159, 0.1);
@@ -256,6 +260,63 @@ textarea {
 .stack {
   display: grid;
   gap: 10px;
+}
+
+.button-row,
+.recorder-status,
+.export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.button-row {
+  flex-wrap: wrap;
+}
+
+.button-row button {
+  flex: 1 1 92px;
+}
+
+.recorder-status {
+  min-height: 32px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.export-row .field {
+  flex: 1;
+}
+
+.json-preview,
+.path-readout {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090d10;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+}
+
+.json-preview {
+  min-height: 112px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+}
+
+.path-readout {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 7px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-button {
@@ -310,7 +371,8 @@ textarea {
 }
 
 .table,
-.tape {
+.tape,
+.alert-table {
   display: grid;
   gap: 1px;
   border: 1px solid var(--line);
@@ -318,9 +380,9 @@ textarea {
   overflow: hidden;
 }
 
-.row {
+.row,
+.alert-row {
   display: grid;
-  grid-template-columns: 0.8fr 0.7fr 1fr 1fr 1.2fr 0.7fr;
   gap: 10px;
   min-height: 38px;
   align-items: center;
@@ -330,10 +392,25 @@ textarea {
   font-size: 11px;
 }
 
-.row.head {
+.row {
+  grid-template-columns: 0.8fr 0.7fr 1fr 1fr 1.2fr 0.7fr;
+}
+
+.alert-row {
+  grid-template-columns: 0.7fr 0.7fr 1.4fr 0.7fr 0.7fr 1fr;
+}
+
+.row.head,
+.alert-row.head {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.alert-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty {
