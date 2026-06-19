@@ -2,3 +2,7 @@ fastapi==0.124.2
 uvicorn[standard]==0.38.0
 pydantic==2.12.5
 python-multipart==0.0.20
+aiosqlite==0.21.0
+discord.py==2.5.2
+yfinance==0.2.65
+pandas==2.3.0
