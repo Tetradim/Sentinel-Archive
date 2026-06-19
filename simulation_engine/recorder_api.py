@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .alert_parser import parse_alert_text
 from .discord_recorder import DiscordRecorder
@@ -94,22 +94,29 @@ def create_recorder_router(
         if not rows:
             raise HTTPException(status_code=400, detail="at least one Discord message row is required")
         inserted = 0
+        failures: list[dict[str, Any]] = []
         for index, row in enumerate(rows, start=1):
-            request = IngestMessageRequest(
-                message_id=str(row.get("message_id") or row.get("id") or f"csv-{index}"),
-                channel_id=str(row.get("channel_id") or ""),
-                channel_name=str(row.get("channel_name") or ""),
-                guild_id=str(row.get("guild_id") or ""),
-                guild_name=str(row.get("guild_name") or ""),
-                author_id=str(row.get("author_id") or ""),
-                author_name=str(row.get("author_name") or row.get("author") or ""),
-                discord_timestamp=str(row.get("discord_timestamp") or row.get("timestamp") or ""),
-                content=str(row.get("content") or row.get("message") or row.get("raw_text") or ""),
-            )
+            try:
+                request = IngestMessageRequest(
+                    message_id=str(row.get("message_id") or row.get("id") or f"csv-{index}"),
+                    channel_id=str(row.get("channel_id") or ""),
+                    channel_name=str(row.get("channel_name") or ""),
+                    guild_id=str(row.get("guild_id") or ""),
+                    guild_name=str(row.get("guild_name") or ""),
+                    author_id=str(row.get("author_id") or ""),
+                    author_name=str(row.get("author_name") or row.get("author") or ""),
+                    discord_timestamp=str(row.get("discord_timestamp") or row.get("timestamp") or ""),
+                    content=str(row.get("content") or row.get("message") or row.get("raw_text") or ""),
+                )
+            except ValidationError as exc:
+                failures.append({"row": index, "error": str(exc)})
+                continue
             result = await recorder.handle_message(_fake_message(request), bot_user_id="recorder-api")
             if result == "recorded":
                 inserted += 1
-        return {"inserted": inserted, "rows": len(rows)}
+            else:
+                failures.append({"row": index, "error": result})
+        return {"inserted": inserted, "failed": len(failures), "rows": len(rows), "errors": failures[:50]}
 
     @router.post("/recorder/market/import/options-csv")
     async def import_options_csv(body: CsvImportRequest):

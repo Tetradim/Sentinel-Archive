@@ -338,19 +338,19 @@ class RecordingStore:
         return await self._list_json("discord_messages", "discord_timestamp", limit, channel_id=channel_id)
 
     async def list_alerts(self, limit: int = 100, channel_id: str | None = None) -> list[dict[str, Any]]:
-        if not channel_id:
-            return await self._list_json("parsed_alerts", "message_id", limit)
+        where = "WHERE m.channel_id = ?" if channel_id else ""
+        params: tuple[Any, ...] = (channel_id, limit) if channel_id else (limit,)
         async with self._connect() as conn:
             async with conn.execute(
-                """
+                f"""
                 SELECT a.data
                 FROM parsed_alerts a
                 JOIN discord_messages m ON m.message_id = a.message_id
-                WHERE m.channel_id = ?
+                {where}
                 ORDER BY m.discord_timestamp DESC
                 LIMIT ?
                 """,
-                (channel_id, limit),
+                params,
             ) as cur:
                 rows = await cur.fetchall()
         return [json.loads(row["data"]) for row in rows]

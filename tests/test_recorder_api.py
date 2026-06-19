@@ -45,6 +45,34 @@ def test_option_csv_import_endpoint(tmp_path):
         assert response.json()["inserted"] == 1
 
 
+def test_discord_csv_import_reports_invalid_rows_without_failing_file(tmp_path):
+    app = create_app(recorder_db_path=tmp_path / "recorder.sqlite3")
+    csv_text = (
+        "message_id,channel_id,channel_name,author_id,author_name,discord_timestamp,content\n"
+        "m1,123,alerts,a1,Analyst,2026-06-19T14:30:00+00:00,BTO SPY 500C 6/21 @ 1.25\n"
+        "m2,,alerts,a1,Analyst,2026-06-19T14:31:00+00:00,BTO SPY 500C 6/21 @ 1.25\n"
+    )
+    with TestClient(app) as client:
+        client.put(
+            "/api/recorder/discord/settings",
+            json={
+                "discord_token": "",
+                "discord_channel_ids": ["123"],
+                "drift_amount_threshold": 0.05,
+                "drift_percent_threshold": 10,
+                "yfinance_enabled": False,
+                "record_all_channels": False,
+            },
+        )
+
+        response = client.post("/api/recorder/discord/import-csv", json={"csv_text": csv_text})
+
+        assert response.status_code == 200
+        assert response.json()["inserted"] == 1
+        assert response.json()["failed"] == 1
+        assert response.json()["errors"][0]["row"] == 2
+
+
 def test_export_endpoint_writes_channel_aware_file(tmp_path):
     app = create_app(recorder_db_path=tmp_path / "recorder.sqlite3", recorder_export_root=tmp_path / "recordings")
     with TestClient(app) as client:

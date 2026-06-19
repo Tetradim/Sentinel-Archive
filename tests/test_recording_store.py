@@ -181,3 +181,43 @@ def test_store_exports_timestamped_channel_aware_alert_csv(tmp_path):
         assert rows[0]["ticker"] == "SPY"
 
     asyncio.run(run())
+
+
+def test_store_lists_alerts_newest_discord_message_first(tmp_path):
+    from simulation_engine.recording_store import RecordingStore
+
+    async def run():
+        store = RecordingStore(tmp_path / "recorder.sqlite3")
+        await store.initialize()
+        for message_id, timestamp in [("z-old", "2026-06-19T14:30:00+00:00"), ("a-new", "2026-06-19T14:35:00+00:00")]:
+            await store.insert_message(
+                DiscordMessageRecord(
+                    message_id=message_id,
+                    channel_id="123",
+                    channel_name="alerts",
+                    author_id="a1",
+                    author_name="Analyst",
+                    discord_timestamp=timestamp,
+                    content=f"BTO SPY 500C 6/21 @ 1.2 {message_id}",
+                )
+            )
+            await store.insert_parsed_alert(
+                ParsedAlert(
+                    message_id=message_id,
+                    parse_status="parsed",
+                    raw_text="BTO SPY 500C 6/21 @ 1.25",
+                    action="buy",
+                    ticker="SPY",
+                    expiration="2026-06-21",
+                    strike=500,
+                    option_type="CALL",
+                    alert_price=1.25,
+                    normalized={"contract_key": "SPY|2026-06-21|500|CALL"},
+                )
+            )
+
+        alerts = await store.list_alerts(limit=10)
+
+        assert [alert["message_id"] for alert in alerts] == ["a-new", "z-old"]
+
+    asyncio.run(run())
