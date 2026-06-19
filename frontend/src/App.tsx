@@ -57,6 +57,7 @@ export function App() {
   const [status, setStatus] = React.useState('Idle');
   const [error, setError] = React.useState('');
   const [recorderSettings, setRecorderSettings] = React.useState<RecorderSettings | null>(null);
+  const [recorderDirty, setRecorderDirty] = React.useState(false);
   const [recorderStatus, setRecorderStatus] = React.useState<RecorderStatus | null>(null);
   const [previewText, setPreviewText] = React.useState('BTO SPY 500C 6/21 @ 1.25');
   const [previewAlert, setPreviewAlert] = React.useState<ParsedAlert | null>(null);
@@ -78,14 +79,14 @@ export function App() {
       api.recorderExports(),
     ]);
     setSnapshot(next);
-    setRecorderSettings(settings);
+    setRecorderSettings((current) => (recorderDirty && current ? current : settings));
     setRecorderStatus(recorder);
     setRecorderAlerts(alerts.alerts);
     setDriftEvents(drift.drift_events);
     setExports(exportList.exports);
     setConfigDraft((current) => current ?? next.config);
     if (!selectedSession && next.sessions[0]) setSelectedSession(next.sessions[0].session_id);
-  }, [selectedSession]);
+  }, [recorderDirty, selectedSession]);
 
   React.useEffect(() => {
     refresh().catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -119,7 +120,14 @@ export function App() {
   }
 
   function updateRecorder<K extends keyof RecorderSettings>(key: K, value: RecorderSettings[K]) {
+    setRecorderDirty(true);
     setRecorderSettings((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  async function saveRecorderSettings(settings: RecorderSettings) {
+    const saved = await api.updateRecorderSettings(settings);
+    setRecorderSettings(saved);
+    setRecorderDirty(false);
   }
 
   function handoffPayload() {
@@ -256,7 +264,7 @@ export function App() {
                 </label>
               </div>
               <div className="button-row">
-                <button className="primary" type="button" onClick={() => run('Saving recorder', () => api.updateRecorderSettings(recorderSettings))}>
+                <button className="primary" type="button" onClick={() => run('Saving recorder', () => saveRecorderSettings(recorderSettings))}>
                   <Save size={15} />
                   Save
                 </button>
