@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
 from .alert_parser import parse_alert_text
+from .bot_event_bus import publish_event
 from .discord_recorder import DiscordRecorder
 from .market_recorder import parse_option_csv, parse_stock_csv
 from .recorder_models import RecorderSettings
@@ -86,6 +87,15 @@ def create_recorder_router(
     @router.post("/recorder/dev/ingest-message")
     async def ingest_message(body: IngestMessageRequest):
         result = await recorder.handle_message(_fake_message(body), bot_user_id="recorder-api")
+        if result == "recorded":
+            publish_event(
+                "simulation.recording.discord_message",
+                payload=body.model_dump(mode="json"),
+                correlation_id=body.message_id,
+                dedupe_key=f"simulation-discord-message:{body.message_id}",
+                target_bots=["sentinel-edge", "consolidation"],
+                trace={"recorder_result": result},
+            )
         return {"status": result}
 
     @router.post("/recorder/discord/import-csv")
