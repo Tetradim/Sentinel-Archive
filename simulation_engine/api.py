@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from .contracts import pulse_handoff_contract_document
 from .bot_event_bus_api import create_bot_event_bus_router
+from .chrome_bridge_api import create_chrome_bridge_router
 from .core import SimulationEngine
 from .csv_import import parse_ohlcv_csv
 from .discord_recorder import DiscordRecorder
@@ -90,6 +91,7 @@ def create_app(
     )
     app.include_router(create_recorder_router(recorder_store, discord_recorder, export_root=recorder_export_root), prefix="/api")
     app.include_router(create_bot_event_bus_router(), prefix="/api")
+    app.include_router(create_chrome_bridge_router(recorder_store, discord_recorder), prefix="/api")
 
     def current_engine() -> SimulationEngine:
         return app.state.engine

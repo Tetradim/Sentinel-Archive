@@ -246,6 +246,10 @@ textarea.compact-textarea {
   min-height: 74px;
 }
 
+textarea.channel-filter {
+  min-height: 52px;
+}
+
 .primary {
   border-color: rgba(57, 208, 159, 0.42);
   background: rgba(57, 208, 159, 0.1);
@@ -286,6 +290,37 @@ textarea.compact-textarea {
   flex-wrap: wrap;
 }
 
+.channel-chip-row {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.channel-chip,
+.channel-empty {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 9px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
+.channel-chip {
+  color: var(--blue);
+  border-color: rgba(106, 163, 255, 0.34);
+  background: rgba(106, 163, 255, 0.08);
+}
+
+.channel-empty {
+  color: var(--muted);
+  border-style: dashed;
+}
+
 .export-row .field {
   flex: 1;
 }
@@ -306,6 +341,11 @@ textarea.compact-textarea {
   overflow: auto;
   margin: 0;
   padding: 10px;
+}
+
+.json-preview.short {
+  min-height: 76px;
+  max-height: 116px;
 }
 
 .path-readout {

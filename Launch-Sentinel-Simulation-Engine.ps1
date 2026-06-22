@@ -5,7 +5,8 @@ param(
     [switch]$NoBrowser,
     [switch]$InstallDeps,
     [switch]$Rebuild,
-    [switch]$SmokeTest
+    [switch]$SmokeTest,
+    [switch]$AllowDefaultBrowserFallback
 )
 
 $ErrorActionPreference = "Stop"
@@ -90,9 +91,13 @@ function Start-DedicatedBrowserWindow {
         return $process
     }
 
-    Write-Status "Opening default browser without dedicated profile" "WARN"
-    Start-Process $Url | Out-Null
-    return $null
+    if ($AllowDefaultBrowserFallback) {
+        Write-Status "Opening default browser without dedicated profile" "WARN"
+        Start-Process $Url | Out-Null
+        return $null
+    }
+
+    throw "A dedicated Edge or Chrome app window could not be opened. Install Microsoft Edge or Google Chrome, pass -NoBrowser to run headless, or pass -AllowDefaultBrowserFallback to open a regular browser tab."
 }
 
 function Get-BrowserProfileProcesses {
@@ -391,6 +396,9 @@ if ($SmokeTest) {
     Write-Status "Running launcher smoke test"
     if (-not (Find-CommandPath -Names @("python.exe", "python"))) { throw "Python was not found." }
     if (-not (Find-CommandPath -Names @("npm.cmd", "npm.exe", "npm"))) { throw "npm was not found." }
+    if (-not $NoBrowser -and -not $AllowDefaultBrowserFallback -and -not (Find-BrowserExecutable)) {
+        throw "A dedicated Edge or Chrome app window could not be opened. Install Microsoft Edge or Google Chrome, pass -NoBrowser to smoke-test headless, or pass -AllowDefaultBrowserFallback."
+    }
     Write-Status "Launcher smoke test passed" "OK"
     exit 0
 }

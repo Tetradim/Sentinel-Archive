@@ -18,7 +18,19 @@ import {
   SlidersHorizontal,
   Upload,
 } from 'lucide-react';
-import { api, type ExportRecord, type ParsedAlert, type PriceDriftEvent, type RecorderSettings, type RecorderStatus, type SimulationConfig, type SimulationSnapshot } from './api';
+import {
+  api,
+  type ConsolidationReplayResponse,
+  type ConsolidationTestRun,
+  type DiscordTestResult,
+  type ExportRecord,
+  type ParsedAlert,
+  type PriceDriftEvent,
+  type RecorderSettings,
+  type RecorderStatus,
+  type SimulationConfig,
+  type SimulationSnapshot,
+} from './api';
 
 const emptyCsv = 'timestamp,symbol,open,high,low,close,volume\n';
 const emptyDiscordCsv = 'message_id,channel_id,channel_name,author_id,author_name,discord_timestamp,content\n';
@@ -42,6 +54,15 @@ function isoMinute() {
   return Math.floor(Date.now() / 60000);
 }
 
+function parseChannelIds(value: string) {
+  const ids: string[] = [];
+  for (const part of value.split(/[\s,;]+/)) {
+    const clean = part.trim();
+    if (clean && !ids.includes(clean)) ids.push(clean);
+  }
+  return ids;
+}
+
 export function App() {
   const [snapshot, setSnapshot] = React.useState<SimulationSnapshot | null>(null);
   const [configDraft, setConfigDraft] = React.useState<SimulationConfig | null>(null);
@@ -59,6 +80,7 @@ export function App() {
   const [recorderSettings, setRecorderSettings] = React.useState<RecorderSettings | null>(null);
   const [recorderDirty, setRecorderDirty] = React.useState(false);
   const [recorderStatus, setRecorderStatus] = React.useState<RecorderStatus | null>(null);
+  const [discordTestResult, setDiscordTestResult] = React.useState<DiscordTestResult | null>(null);
   const [previewText, setPreviewText] = React.useState('BTO SPY 500C 6/21 @ 1.25');
   const [previewAlert, setPreviewAlert] = React.useState<ParsedAlert | null>(null);
   const [discordCsvText, setDiscordCsvText] = React.useState(emptyDiscordCsv);
@@ -66,8 +88,13 @@ export function App() {
   const [stocksCsvText, setStocksCsvText] = React.useState(emptyCsv);
   const [recorderAlerts, setRecorderAlerts] = React.useState<ParsedAlert[]>([]);
   const [driftEvents, setDriftEvents] = React.useState<PriceDriftEvent[]>([]);
-  const [exportChannelId, setExportChannelId] = React.useState('');
+  const [exportChannelIdsText, setExportChannelIdsText] = React.useState('');
+  const [exportType, setExportType] = React.useState<'alerts' | 'joined'>('joined');
   const [exports, setExports] = React.useState<ExportRecord[]>([]);
+  const [consolidationChannelIdsText, setConsolidationChannelIdsText] = React.useState('');
+  const [consolidationSince, setConsolidationSince] = React.useState('');
+  const [consolidationReplay, setConsolidationReplay] = React.useState<ConsolidationReplayResponse | null>(null);
+  const [consolidationTestRun, setConsolidationTestRun] = React.useState<ConsolidationTestRun | null>(null);
 
   const refresh = React.useCallback(async () => {
     const [next, settings, recorder, alerts, drift, exportList] = await Promise.all([
@@ -153,6 +180,15 @@ export function App() {
   const positions = Object.values(snapshot?.account.positions ?? {});
   const driftByAlert = React.useMemo(() => new Map(driftEvents.map((event) => [event.alert_id, event])), [driftEvents]);
   const latestExport = exports[0];
+  const exportChannelIds = React.useMemo(() => parseChannelIds(exportChannelIdsText), [exportChannelIdsText]);
+  const consolidationChannelIds = React.useMemo(() => parseChannelIds(consolidationChannelIdsText), [consolidationChannelIdsText]);
+  const consolidationReplayUrl = React.useMemo(() => {
+    const params = new URLSearchParams();
+    if (consolidationChannelIds.length) params.set('channel_ids', consolidationChannelIds.join(','));
+    if (consolidationSince.trim()) params.set('since', consolidationSince.trim());
+    params.set('limit', '100');
+    return `/api/consolidation/replay/events?${params.toString()}`;
+  }, [consolidationChannelIds, consolidationSince]);
 
   return (
     <div className="app">
@@ -237,6 +273,7 @@ export function App() {
                 <span>{number(recorderStatus?.messages_recorded, 0)} messages</span>
                 <span>{number(recorderStatus?.parsed_alerts, 0)} parsed</span>
                 <span>{number(recorderStatus?.drift_alerts, 0)} drift flags</span>
+                <span>{recorderStatus?.active_session_id ? `session ${recorderStatus.active_session_id}` : 'no session'}</span>
               </div>
               <label className="field">
                 <span>Bot token</span>
@@ -247,10 +284,11 @@ export function App() {
                 <textarea
                   className="compact-textarea"
                   value={recorderSettings.discord_channel_ids.join('\n')}
-                  onChange={(event) => updateRecorder('discord_channel_ids', event.target.value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean))}
+                  onChange={(event) => updateRecorder('discord_channel_ids', parseChannelIds(event.target.value))}
                   spellCheck={false}
                 />
               </label>
+              <ChannelChips ids={recorderSettings.record_all_channels ? ['*'] : recorderSettings.discord_channel_ids} emptyLabel="No channel IDs configured" />
               <div className="form-grid compact">
                 <NumberField label="Drift $" value={recorderSettings.drift_amount_threshold} step={0.01} onChange={(value) => updateRecorder('drift_amount_threshold', value)} />
                 <NumberField label="Drift %" value={recorderSettings.drift_percent_threshold} onChange={(value) => updateRecorder('drift_percent_threshold', value)} />
@@ -268,7 +306,7 @@ export function App() {
                   <Save size={15} />
                   Save
                 </button>
-                <button type="button" onClick={() => run('Testing recorder', api.testDiscordRecorder)}>
+                <button type="button" onClick={() => run('Testing recorder', async () => setDiscordTestResult(await api.testDiscordRecorder()))}>
                   <PlugZap size={15} />
                   Test
                 </button>
@@ -280,7 +318,16 @@ export function App() {
                   <Pause size={15} />
                   Stop
                 </button>
+                <button type="button" onClick={() => run('Starting capture session', () => api.startRecordingSession('UI capture session'))}>
+                  <Play size={15} />
+                  Capture
+                </button>
+                <button type="button" onClick={() => run('Stopping capture session', api.stopRecordingSession)}>
+                  <Pause size={15} />
+                  End
+                </button>
               </div>
+              {discordTestResult ? <pre className="json-preview short">{JSON.stringify(discordTestResult, null, 2)}</pre> : null}
               <label className="field">
                 <span>Parse preview</span>
                 <textarea className="compact-textarea" value={previewText} onChange={(event) => setPreviewText(event.target.value)} spellCheck={false} />
@@ -323,15 +370,57 @@ export function App() {
             </button>
             <div className="export-row">
               <label className="field">
-                <span>Export channel</span>
-                <input value={exportChannelId} onChange={(event) => setExportChannelId(event.target.value)} placeholder="123456789" />
+                <span>Export channels</span>
+                <textarea className="compact-textarea channel-filter" value={exportChannelIdsText} onChange={(event) => setExportChannelIdsText(event.target.value)} placeholder="Blank exports all channels" spellCheck={false} />
               </label>
-              <button className="primary" type="button" onClick={() => run('Exporting alerts', () => api.exportRecordings(exportChannelId))}>
+              <label className="field">
+                <span>Export type</span>
+                <select value={exportType} onChange={(event) => setExportType(event.target.value as 'alerts' | 'joined')}>
+                  <option value="joined">joined</option>
+                  <option value="alerts">alerts</option>
+                </select>
+              </label>
+              <button className="primary" type="button" onClick={() => run('Exporting alerts', () => api.exportRecordings(exportChannelIds, exportType))}>
                 <Download size={15} />
                 Export
               </button>
             </div>
+            <ChannelChips ids={exportChannelIds} emptyLabel="Export scope: all channels" />
             <p className="path-readout">{latestExport ? latestExport.file_path : 'No exports yet'}</p>
+          </div>
+        </section>
+
+        <section className="panel tall">
+          <PanelHeader icon={<PlugZap size={16} />} title="Consolidation Replay" />
+          <div className="stack">
+            <label className="field">
+              <span>Replay channels</span>
+              <textarea className="compact-textarea channel-filter" value={consolidationChannelIdsText} onChange={(event) => setConsolidationChannelIdsText(event.target.value)} placeholder="Blank replays all channels" spellCheck={false} />
+            </label>
+            <ChannelChips ids={consolidationChannelIds} emptyLabel="Replay scope: all channels" />
+            <label className="field">
+              <span>Since</span>
+              <input value={consolidationSince} onChange={(event) => setConsolidationSince(event.target.value)} placeholder="2026-06-19T14:30:00+00:00" />
+            </label>
+            <div className="button-row">
+              <button type="button" onClick={() => run('Loading Consolidation replay', async () => setConsolidationReplay(await api.consolidationReplayEvents(consolidationChannelIds, consolidationSince, 100)))}>
+                <RotateCcw size={15} />
+                Events
+              </button>
+              <button className="primary" type="button" onClick={() => run('Writing Consolidation test run', async () => setConsolidationTestRun(await api.createConsolidationTestRun('Consolidation UI test', consolidationChannelIds, consolidationSince, 1000)))}>
+                <Download size={15} />
+                JSONL
+              </button>
+            </div>
+            <div className="recorder-status">
+              <Badge tone={consolidationReplay?.event_count ? 'good' : 'neutral'} label={`${consolidationReplay ? number(consolidationReplay.event_count, 0) : '0'} events`} />
+              <span>{consolidationReplay?.contract_version || 'simulation.consolidation.replay.v1'}</span>
+            </div>
+            <p className="path-readout">{consolidationReplayUrl}</p>
+            <p className="path-readout">{consolidationTestRun ? consolidationTestRun.file_path : 'No test run yet'}</p>
+            <pre className="json-preview">
+              {consolidationReplay?.events[0] ? JSON.stringify(consolidationReplay.events[0], null, 2) : 'No replay event loaded'}
+            </pre>
           </div>
         </section>
 
@@ -450,6 +539,15 @@ function PanelHeader({ icon, title }: { icon: React.ReactNode; title: string }) 
     <div className="panel-header">
       {icon}
       <h2>{title}</h2>
+    </div>
+  );
+}
+
+function ChannelChips({ ids, emptyLabel }: { ids: string[]; emptyLabel: string }) {
+  const clean = ids.map((item) => item.trim()).filter(Boolean);
+  return (
+    <div className="channel-chip-row">
+      {clean.length ? clean.map((id) => <span className="channel-chip" key={id}>{id === '*' ? 'all channels' : id}</span>) : <span className="channel-empty">{emptyLabel}</span>}
     </div>
   );
 }

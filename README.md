@@ -1,39 +1,78 @@
 # Sentinel Simulation Engine
 
-Standalone recorded-market replay and Edge/Pulse contract simulator for the Sentinel trading suite.
+Local recorded-market simulation, Edge/Pulse contract testing, Discord options alert recording, and Consolidation replay data generation.
 
-The engine can run by itself, stand in for Pulse, stand in for Edge, or serve both contracts at once. Tandem Suite can point both bot URLs at this service and show changing trade state without connecting to a broker.
-
-## Current Feature Map
-
-| Area | Current capability |
-|------|--------------------|
-| Recorded replay | Imports OHLCV CSV bars, groups rows by timestamp, and advances replay in deterministic timestamp batches. |
-| Market state | Maintains current replay prices per symbol and exposes quote/price endpoints for Edge/Pulse-style clients. |
-| Simulated account | Tracks cash, equity, buying power, open positions, average entry, current price, P&L dollars, P&L percent, trailing state, and day P&L. |
-| Execution realism | Configurable starting cash, default quantity, max allocation percent, fill ratio, slippage basis points, commission, confidence threshold, default trailing percent, regular stop percent, and take-profit percent. |
-| Handoff contract | Accepts `edge.pulse.handoff.v1` payloads at `/api/edge/handoff` and `/api/simulation/handoff`. |
-| Action coverage | Handles `buy`, `sell`, `regular_stop`, `trailing_stop`, `opening_trailing_stop`, `tighten_trailing_stop`, `stop_all`, `emergency_exit`, `dca`, and `stop_buying`. |
-| Risk exits | Evaluates regular stop, take profit, and trailing stop against replay bar high/low values on every replay step. |
-| Idempotency | Duplicate `idempotency_key` values return the original handoff result without applying side effects twice. |
-| Edge facade | Serves `/api/live`, `/api/ready`, `/api/automation`, `/api/decisions`, `/api/pulse/handoff/schema`, `/api/pulse/account`, and `/api/pulse/positions`. |
-| Pulse facade | Serves `/api/health`, `/api/edge/status`, `/api/edge/account/status`, `/api/edge/tickers`, `/api/edge/positions/{symbol}`, legacy decision/trailing endpoints, and lightweight signal scoring. |
-| Tandem support | Can be used as both `EDGE_API_URL` and `PULSE_API_URL` so Tandem shows a full pair dashboard without live brokers. |
-| Discord options recorder | Records Discord option alerts, parsed contracts, market snapshots, drift flags, CSV imports, replay events, and timestamped channel-aware exports in SQLite. |
-| Control panel | Ships a React/Vite UI served by FastAPI after build, with execution settings, replay import/playback, handoff composer, positions, and decision/event tape. |
-| Windows launcher | Starts the engine, opens a dedicated browser profile, and now supports Pulse-style "one closes the other" cleanup between browser and process. |
+This project is intentionally local-first. It can stand in for Sentinel Edge, Sentinel Pulse, or both at the same time, while also recording Discord options alerts and market observations for later bot testing.
 
 ## Safety Boundary
 
-The Simulation Engine is a paper/simulation-only process. It does not connect to brokers, does not place live orders, and does not persist simulated account state across process restarts. It is meant for local replay, UI integration testing, Tandem demos, Edge/Pulse contract testing, and operator workflow validation before using real broker-connected services.
+The Simulation Engine does not connect to brokers and does not place live orders.
 
-The Discord options recorder is also recorder-only. It captures alert and market data for later testing, but it does not call the handoff execution path, simulate fills, open positions, or replace the Consolidation bot's trading behavior.
+The Discord recorder inside this project is also recorder-only. It listens to Discord, parses alerts, stores market context, calculates drift, exports data, and publishes replay events. It does not execute paper trades, simulate option positions, or replace the Consolidation trading bot.
 
-## Local Work Folder
+Use this project to answer:
 
-```powershell
+- What did a Discord alert say?
+- When did it arrive?
+- Which channel and author did it come from?
+- What did the parser extract?
+- What market price did the engine see at that time?
+- Was there meaningful alert-price drift?
+- What replay event stream should another bot consume for testing?
+
+## Repository
+
+```text
 C:\Users\Lite OS\Documents\Codex\2026-06-12\c-users-lite-os-openclaw-workspace\work\Simulation-Engine
 ```
+
+## Current Capability Map
+
+| Area | Implemented capability |
+| --- | --- |
+| Market replay | Imports OHLCV CSV rows, sorts by timestamp, groups same-timestamp bars, and advances deterministically. |
+| Market state | Maintains current replay prices per symbol and exposes quote/price endpoints. |
+| Simulated account | Tracks cash, equity, buying power, open positions, average entry, current price, P&L, trailing state, and day P&L. |
+| Execution assumptions | Configurable starting cash, quantity, allocation cap, fill ratio, slippage, commission, confidence threshold, regular stop, trailing stop, and take-profit rules. |
+| Handoff contract | Accepts `edge.pulse.handoff.v1` through native and Pulse-compatible endpoints. |
+| Action coverage | Handles buy, sell, DCA, regular stop, trailing stop, tighten trailing stop, opening trailing stop, stop all, emergency exit, and stop buying. |
+| Risk exits | Applies replay-bar high/low checks for regular stop, take profit, and trailing stop exits. |
+| Idempotency | Reuses prior handoff results when the same `idempotency_key` arrives again. |
+| Edge facade | Serves Edge-style liveness, automation, decisions, Pulse account, Pulse positions, and handoff schema endpoints. |
+| Pulse facade | Serves Pulse-style health, Edge status, account, tickers, positions, handoff, legacy decision, legacy trailing, and signal scoring endpoints. |
+| Discord recorder | Stores Discord messages, embeds, attachments, parsed alerts, source metadata, sessions, market bars, snapshots, drift events, and exports in SQLite. |
+| Discord diagnostics | Tests saved token or `DISCORD_BOT_TOKEN` against Discord REST and verifies configured channel access without returning secrets. |
+| Alert parser | Parses buy/open, sell/trim/close, and average-down option alerts from plain text and embed text. |
+| Market capture | Imports option and stock price CSVs, optionally enriches with yfinance, snapshots alert-time option and stock prices, and calculates drift. |
+| Consolidation replay | Publishes joined replay events for Consolidation and writes JSONL test-run manifests. |
+| Control panel | React/Vite dashboard for replay, simulated handoffs, recorder setup, imports, exports, Consolidation replay, positions, and event tape. |
+| Windows launcher | Starts FastAPI, optionally rebuilds UI, opens a dedicated browser profile, and stops the process when the browser closes. |
+
+## Architecture
+
+```text
+CSV market data                  Discord alerts
+      |                                |
+      v                                v
+SimulationEngine              DiscordRecorder
+      |                                |
+      |                         RecordingStore
+      |                         SQLite database
+      |                                |
+      |                         snapshots, drift, exports
+      |                                |
+      +----------- FastAPI API --------+
+                         |
+                         v
+              React control panel
+                         |
+          Edge/Pulse/Consolidation clients
+```
+
+The in-memory simulation state and the persistent recorder state are separate:
+
+- Replay sessions, simulated positions, decisions, and account state are in memory.
+- Recorder settings, Discord messages, parsed alerts, market bars, snapshots, drift events, capture sessions, and exports are persisted in SQLite.
 
 ## Quick Start
 
@@ -45,294 +84,170 @@ npm run build
 .\.venv\Scripts\python.exe -m uvicorn simulation_engine.main:app --host 127.0.0.1 --port 9200
 ```
 
-Open `http://127.0.0.1:9200`.
+Open:
 
-Windows launcher:
+```text
+http://127.0.0.1:9200
+```
+
+## Windows Launcher
 
 ```powershell
 .\Launch-Sentinel-Simulation-Engine.ps1
 ```
 
-The Windows launcher opens the control panel in a dedicated browser window with an isolated local profile. Closing that browser window stops the Simulation Engine process started by the launcher. Closing the launcher window or pressing Ctrl+C closes the dedicated browser profile and stops the server. Use `-NoBrowser` when you intentionally want a headless run without browser-close monitoring.
-
-Useful launcher flags:
+Useful flags:
 
 | Flag | Purpose |
-|------|---------|
-| `-Port 9200` | Choose the FastAPI/control-panel port. |
-| `-NoBrowser` | Start the server without opening a browser or monitoring browser close. |
+| --- | --- |
+| `-Port 9200` | Choose the FastAPI and control-panel port. |
+| `-NoBrowser` | Start without opening or monitoring a browser window. |
 | `-InstallDeps` | Install Python and frontend dependencies before launch. |
 | `-Rebuild` | Rebuild the React control panel before launch. |
-| `-SmokeTest` | Check launcher prerequisites without starting the engine. |
+| `-SmokeTest` | Verify launcher prerequisites without starting the server. |
+| `-AllowDefaultBrowserFallback` | Permit a regular browser tab if Edge or Chrome app-window mode is unavailable. |
 
-## How It Works
+The launcher:
 
-The engine keeps one in-memory simulation state:
+1. Verifies Python and npm.
+2. Creates or reuses `.venv`.
+3. Installs dependencies when requested or missing.
+4. Builds the control panel when requested or when `dist/index.html` is missing.
+5. Replaces an existing listener on the selected port.
+6. Starts `uvicorn simulation_engine.main:app`.
+7. Waits for `/api/health`.
+8. Opens a dedicated Edge or Chrome app window unless `-NoBrowser` is set.
+9. Stops the server when the dedicated browser closes.
 
-1. You import recorded OHLCV bars from CSV.
-2. The replay clock advances through those bars.
-3. Each replay step updates `current_prices`.
-4. Handoff commands buy, sell, stop, or enable trailing stops against those current prices.
-5. The account model recalculates cash, equity, buying power, positions, P&L, and risk exits.
-6. Edge-compatible and Pulse-compatible endpoints expose that same state to Tandem, Edge, or Pulse.
+By default the launcher does not silently fall back to a regular browser tab. If Edge or Chrome cannot be found, it stops with an explicit browser error. Use `-AllowDefaultBrowserFallback` only when a normal tab is acceptable.
 
-Core replay/account state is in memory. Restarting the process clears imported replay sessions, simulated positions, idempotency keys, decisions, and logs.
+## macOS Beta Installer
 
-Recorder data is persisted separately in SQLite at `data/simulation_engine.sqlite3`. This includes Discord messages, parsed option alerts, imported market observations, snapshots, drift events, and export metadata.
+MacBook beta testers can install the local source build with the bundled macOS installer script. It creates a Python virtual environment, installs npm dependencies, builds the React control panel, and adds a double-click launcher to the Desktop.
 
-## Launcher Lifecycle
+Prerequisites:
 
-`Launch-Sentinel-Simulation-Engine.ps1` is designed for single-window local operation:
+- macOS with Python 3.11+ on `PATH`
+- Node.js 20+ with `npm`
 
-1. The launcher verifies Python and npm are available.
-2. It creates/uses `.venv`.
-3. It installs dependencies when requested or missing.
-4. It builds the control panel when requested or when `dist/index.html` is missing.
-5. It replaces an existing listener on the selected port.
-6. It starts uvicorn with `simulation_engine.main:app`.
-7. It waits for `/api/health` to identify the service as `sentinel-simulation-engine`.
-8. Unless `-NoBrowser` is set, it opens a dedicated Edge/Chrome app window with a temporary browser profile.
-9. It starts a hidden watchdog that closes the dedicated browser profile and stops the server if the launcher process disappears.
-10. The foreground loop stops the server if the dedicated browser window closes.
+From the repository root:
 
-This matches the Sentinel Pulse local-source launcher behavior and keeps stale local simulation tasks from continuing after the operator UI has been closed.
-
-## Tandem Suite Integration
-
-Set Tandem Suite to use the simulation engine for both bot URLs:
-
-```powershell
-EDGE_API_URL=http://127.0.0.1:9200
-PULSE_API_URL=http://127.0.0.1:9200
-PULSE_EDGE_API_KEY=local-sim-key
+```bash
+chmod +x install-macos.sh
+./install-macos.sh
 ```
 
-In this setup:
+After installation, double-click `Sentinel Simulation Engine.command` on the Desktop. Logs are written to `~/Desktop/Sentinel-Simulation-Engine.log`.
 
-- Tandem reads Edge status from `/api/live`, `/api/ready`, `/api/automation`, `/api/decisions`, and `/api/pulse/*`.
-- Tandem reads Pulse status from `/api/health` and `/api/edge/*`.
-- The simulation engine answers both sides from the same replay/account state.
-- Pulse-compatible routes require `X-API-Key: local-sim-key`.
+Manual launch options:
 
-## Control Panel
+```bash
+./install-macos.sh --launch
+./install-macos.sh --launch --install-deps --rebuild
+./install-macos.sh --launch --port 9200 --no-browser
+```
 
-The web UI is served by the FastAPI app after `npm run build`. It polls `/api/simulation/state` every 1.5 seconds.
+## Environment Variables
+
+| Variable | Purpose |
+| --- | --- |
+| `DISCORD_BOT_TOKEN` | Optional fallback Discord token when no saved token exists. |
+| `PULSE_EDGE_API_KEY` | Not required by this app; Pulse-compatible routes use the built-in local key below. |
+
+Pulse-compatible routes require:
+
+```text
+X-API-Key: local-sim-key
+```
+
+The UI sends this key automatically for handoff composer requests.
+
+## Control Panel Guide
+
+The FastAPI app serves the built React UI from `dist/`. It polls `/api/simulation/state` and recorder endpoints roughly every 1.5 seconds.
 
 ### Top Metrics
 
-`Equity` shows simulated account equity. It is calculated as cash plus the market value of all open positions.
-
-`Replay Index` shows how many timestamp groups have been consumed from the active replay session. It advances when replay is active or when you press `Step`.
-
-`Open Positions` shows the count of simulated broker positions and the current day P&L.
-
-`Current Prices` shows how many symbols have a current replay price. A symbol appears here after replay reaches at least one bar for that symbol.
-
-## Execution Model
-
-The Execution Model panel edits the core assumptions used by the engine. Press `Save Model` to send the values to `PUT /api/simulation/config`.
-
-Saving the model does not wipe existing positions. If there are no positions and cash still equals equity, the cash balance updates to the new starting cash. If positions already exist, the engine preserves current cash/positions and only changes future execution assumptions.
-
-### Starting Cash
-
-Initial account cash and equity.
-
-Used by:
-
-- New account creation.
-- Day P&L calculation.
-- Buying power and allocation checks.
-
-### Default Quantity
-
-The share/contract quantity used when a buy handoff does not include `metadata.quantity`.
-
-Actual filled quantity is:
-
-```text
-default_quantity * fill_ratio
-```
-
-### Max Allocation %
-
-Maximum percent of current total equity that one buy can allocate.
-
-A buy is rejected with `risk_limit` when:
-
-```text
-fill_price * quantity + commission > total_equity * (max_allocation_pct / 100)
-```
-
-The same buy is also rejected if it costs more than available cash.
-
-### Fill Ratio
-
-Partial-fill multiplier.
-
-Examples:
-
-- `1.0` fills the whole requested/default quantity.
-- `0.5` fills half.
-- `0` rejects the buy with `zero_fill_quantity`.
-
-### Slippage bps
-
-Basis-point price adjustment applied to fills.
-
-One basis point is `0.01%`.
-
-Buy fill:
-
-```text
-fill_price = replay_price * (1 + slippage_bps / 10000)
-```
-
-Sell fill:
-
-```text
-fill_price = replay_price * (1 - slippage_bps / 10000)
-```
-
-Example: price `100`, slippage `10` bps.
-
-- Buy fills at `100.10`.
-- Sell fills at `99.90`.
-
-### Commission
-
-Flat commission charged per order.
-
-Buy:
-
-```text
-cash -= fill_price * quantity + commission
-```
-
-Sell:
-
-```text
-cash += fill_price * quantity - commission
-```
-
-### Reject Below
-
-Minimum accepted handoff confidence.
-
-If a handoff has:
-
-```text
-confidence < reject_below
-```
-
-the engine rejects it with `confidence_below_threshold`.
-
-### Trail %
-
-Default trailing-stop percent used when a trailing action does not provide its own `trailing_percent`.
-
-The Handoff Composer has its own `Trail %` input. That value is included directly in trailing handoff payloads and overrides this default for that handoff.
-
-### Stop %
-
-Regular stop-loss percent from average entry.
-
-When replay advances, each open position checks the current bar low:
-
-```text
-stop_price = avg_entry * (1 - stop_percent / 100)
-```
-
-If:
-
-```text
-bar.low <= stop_price
-```
-
-the engine closes the position at `stop_price` and records `regular_stop_sell`.
-
-Set `0` to disable this automatic regular stop rule.
-
-### Target %
-
-Take-profit percent from average entry.
-
-When replay advances, each open position checks the current bar high:
-
-```text
-target_price = avg_entry * (1 + target_percent / 100)
-```
-
-If:
-
-```text
-bar.high >= target_price
-```
-
-the engine closes the position at `target_price` and records `take_profit_sell`.
-
-Set `0` to disable this automatic take-profit rule.
-
-## Market Day Replay
-
-The replay system uses recorded OHLCV bars. It does not generate price movement.
-
-### CSV Format
-
-Required columns:
+| Metric | Meaning |
+| --- | --- |
+| Equity | Cash plus simulated market value of open positions. |
+| Replay Index | Number of timestamp batches consumed from the active replay session. |
+| Open Positions | Number of simulated account positions and current day P&L. |
+| Current Prices | Symbols that have a current replay price. |
+
+### Execution Model
+
+Controls the assumptions used by simulated handoffs:
+
+| Field | Function |
+| --- | --- |
+| Starting cash | Initial account cash and equity. |
+| Default quantity | Quantity used when a handoff omits `metadata.quantity`. |
+| Max allocation % | Maximum account allocation for one buy. |
+| Fill ratio | Partial-fill multiplier for buys. |
+| Slippage bps | Basis-point fill adjustment for buys and sells. |
+| Commission | Flat commission per order. |
+| Reject below | Minimum accepted handoff confidence. |
+| Trail % | Default trailing-stop percent. |
+| Stop % | Automatic regular stop loss from average entry. |
+| Target % | Automatic take-profit threshold from average entry. |
+
+### Market Day Replay
+
+Imports stock-style OHLCV bars.
+
+Required CSV:
 
 ```csv
 timestamp,symbol,open,high,low,close,volume
-2026-06-09T13:30:00Z,SPY,540.10,541.00,539.80,540.75,1200
+2026-06-19T14:29:00Z,SPY,540,541,539,540.5,1000
 ```
 
-Optional columns:
-
-```text
-vwap,trade_count,source
-```
-
-Import behavior:
+Behavior:
 
 - Symbols are uppercased.
-- Rows are sorted by `timestamp`, then `symbol`.
-- Each unique timestamp is replayed as one batch.
-- `close` becomes the current price shown to Edge/Pulse.
-- `high` and `low` drive stop-loss, take-profit, and trailing-stop checks.
+- Rows are sorted by timestamp and symbol.
+- Same-timestamp rows advance as one replay step.
+- `close` becomes the current price.
+- `high` and `low` drive stop-loss, take-profit, and trailing-stop rules.
 
-### Session Name
+### Discord Recorder
 
-Label stored with the imported bars. It is used in the session list and in the generated session fingerprint.
+Controls Discord capture and parser testing.
 
-### Load CSV
+| Control | Function |
+| --- | --- |
+| Bot token | Saved Discord token. API responses mask it as `********`. |
+| Channel IDs | One or more channel IDs to monitor; paste one per line, comma-separated, or space-separated. |
+| Drift $ | Absolute option-price drift threshold. |
+| Drift % | Percent drift threshold. |
+| All channels | Record from every visible channel instead of the configured list. |
+| Live quotes | Allow yfinance option quote lookup when parsed contracts are available. |
+| Save | Persists recorder settings. |
+| Test | Runs Discord REST diagnostics against token and channel access. |
+| Start | Starts the Discord gateway listener. |
+| Stop | Stops the listener. |
+| Capture | Starts a recording session boundary. |
+| End | Stops the active recording session. |
+| Preview | Runs alert parsing without inserting a record. |
 
-Reads a local `.csv` file into the text area. It does not import until you press `Import Bars`.
+### Recorder Imports
 
-### Import Bars
+Imports historical data without connecting to Discord:
 
-Calls:
+| Import | Required fields |
+| --- | --- |
+| Discord alert CSV | `message_id,channel_id,channel_name,author_id,author_name,discord_timestamp,content` |
+| Option price CSV | `timestamp,underlying,expiration,strike,option_type,open,high,low,close,volume` |
+| Stock price CSV | `timestamp,symbol,open,high,low,close,volume` |
+
+Optional option columns:
 
 ```text
-POST /api/simulation/replay/import/csv
+bid,ask,mid,last,open_interest,implied_volatility,delta,theta
 ```
 
-The backend parses the CSV and creates a replay session:
-
-```text
-session_id = replay-{sha256(name + first timestamp + last timestamp + symbols + bar count)[0:12]}
-```
-
-The import also creates ticker records for the imported symbols.
-
-## Discord Options Recorder
-
-The recorder captures Discord option alerts and market observations for later bot testing. It does not execute trades, simulate positions, or connect to brokers.
-
-Recorded data is stored in:
-
-```text
-data/simulation_engine.sqlite3
-```
+### Exports
 
 Exports are written under:
 
@@ -340,323 +255,156 @@ Exports are written under:
 data/recordings/
 ```
 
-Export folders and filenames include the date, channel ID, channel name, and export timestamp:
+File paths include date, channel ID, channel name, and export timestamp.
 
-```text
-data/recordings/2026-06-19/channel-123456789-alerts/20260619-143105-alerts.csv
-```
+Export types:
 
-Every alert export row includes Discord timestamp, engine receipt timestamp, guild/channel/author metadata, parsed contract fields, alert price, parse status, and normalized contract key. Discord bot tokens are masked in API responses and are never included in exports.
+| Type | Contents |
+| --- | --- |
+| `alerts` | Discord metadata plus parser fields. |
+| `joined` | Alert rows plus market snapshot and price drift columns. |
 
-### Discord Setup
+### Consolidation Replay
 
-1. Create a bot in the Discord Developer Portal.
-2. Enable Message Content Intent for the bot.
-3. Invite the bot to the server with permissions to view channels and read message history.
-4. Add one or more channel IDs in the Discord Recorder panel.
-5. Save the recorder settings, then use `Test` and `Start`.
+The UI can fetch the Consolidation replay feed and write JSONL test-run manifests.
 
-You can also set the bot token with:
+| Control | Function |
+| --- | --- |
+| Channel | Optional channel filter. |
+| Since | Optional ISO timestamp cursor. |
+| Events | Fetches `/api/consolidation/replay/events`. |
+| JSONL | Writes a recorded replay manifest through `/api/consolidation/test-runs`. |
 
-```powershell
-$env:DISCORD_BOT_TOKEN="..."
-```
+### Playback
 
-If both the environment variable and saved setting are present, the saved setting is used.
+| Control | Function |
+| --- | --- |
+| Speed | Timestamp batches per second while active. |
+| Loop | Restart from index `0` after the final batch. |
+| Start | Starts selected replay session. |
+| Step | Advances one timestamp batch. |
+| Stop | Stops replay. |
 
-### Alert Parsing
+### Handoff Composer
 
-The parser is based on Consolidation's options alert formats. It recognizes buy/open, sell/trim/close, and average-down style alerts with contracts like:
-
-```text
-BTO SPY 500C 6/21 @ 1.25
-SELL 50% SPY 500 CALLS 6/21 @ 1.40
-```
-
-Unparsed messages are still stored. They are useful because they show which alert formats need new parser rules.
-
-### Market Data CSVs
-
-Stock price imports require:
-
-```csv
-timestamp,symbol,open,high,low,close,volume
-2026-06-19T14:29:00Z,SPY,540,541,539,540.5,1000
-```
-
-Option price imports require:
-
-```csv
-timestamp,underlying,expiration,strike,option_type,open,high,low,close,volume
-2026-06-19T14:29:00Z,SPY,6/21/2026,500,CALL,1.20,1.35,1.10,1.30,120
-```
-
-Optional option quote fields:
-
-```text
-bid,ask,mid,last,open_interest,implied_volatility,delta,theta
-```
-
-Option contract keys are normalized as:
-
-```text
-UNDERLYING|YYYY-MM-DD|STRIKE|CALL
-UNDERLYING|YYYY-MM-DD|STRIKE|PUT
-```
-
-### Price Drift
-
-When an alert contains an option price and matching option market data is available, the recorder stores:
-
-```text
-price_drift_amount = market_price_at_alert - alert_price
-price_drift_pct = (price_drift_amount / alert_price) * 100
-```
-
-`price_drift_alert` is true when either configured threshold is met:
-
-```text
-abs(price_drift_amount) >= drift_amount_threshold
-abs(price_drift_pct) >= drift_percent_threshold
-```
-
-Default thresholds are `$0.05` and `10%`.
-
-### Recorder API
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| GET | `/api/recorder/discord/settings` | Read masked recorder settings |
-| PUT | `/api/recorder/discord/settings` | Save token, channels, drift thresholds, and provider flags |
-| POST | `/api/recorder/discord/test` | Check whether token/channels are configured |
-| POST | `/api/recorder/discord/start` | Start the Discord bot listener |
-| POST | `/api/recorder/discord/stop` | Stop the Discord bot listener |
-| GET | `/api/recorder/discord/status` | Recorder status and counts |
-| POST | `/api/recorder/discord/parse-preview` | Preview parser output for sample alert text |
-| POST | `/api/recorder/discord/import-csv` | Import historical Discord alert rows |
-| POST | `/api/recorder/market/import/options-csv` | Import option price observations |
-| POST | `/api/recorder/market/import/stocks-csv` | Import stock price observations |
-| GET | `/api/recordings/messages` | List recorded raw Discord messages |
-| GET | `/api/recordings/alerts` | List parsed/unparsed alert records |
-| GET | `/api/recordings/market-snapshots` | List alert-time market snapshots |
-| GET | `/api/recordings/drift-events` | List price drift events |
-| POST | `/api/recordings/export` | Write timestamped channel-aware CSV exports |
-| GET | `/api/replay/events` | Chronological truth stream for other bots |
-
-## Playback
-
-Playback controls operate on the selected replay session.
-
-### Speed
-
-Controls automatic replay speed after `Start`.
-
-Internally the FastAPI lifespan task runs this loop:
-
-```text
-if replay.active:
-    step()
-    sleep(max(0.05, 1 / speed))
-```
-
-Examples:
-
-- `1` means about one timestamp batch per second.
-- `20` means about twenty batches per second.
-- Very high speeds are capped by the minimum `0.05` second sleep.
-
-### Loop
-
-When enabled, replay wraps back to index `0` after the final bar.
-
-When disabled, replay stops after the final bar.
-
-### Start
-
-Calls:
-
-```text
-POST /api/simulation/replay/sessions/{session_id}/start
-```
-
-This sets:
-
-```json
-{
-  "active": true,
-  "session_id": "...",
-  "speed": 30,
-  "loop": false,
-  "index": 0
-}
-```
-
-### Step
-
-Calls:
-
-```text
-POST /api/simulation/replay/step
-```
-
-This advances one timestamp batch. If multiple symbols share the same timestamp, they advance together.
-
-For every bar in the batch:
-
-- `current_prices[symbol] = bar.close`
-- Open position current prices are updated.
-- P&L is recalculated.
-- Trailing stops, regular stops, and take-profit rules are evaluated.
-
-### Stop
-
-Calls:
-
-```text
-POST /api/simulation/replay/stop
-```
-
-This sets `replay.active = false`. It does not clear imported bars or positions.
-
-## Handoff Composer
-
-The Handoff Composer builds an Edge-to-Pulse handoff payload and posts it to:
+Builds `edge.pulse.handoff.v1` payloads and posts them to:
 
 ```text
 POST /api/edge/handoff
 X-API-Key: local-sim-key
 ```
 
-The payload shape matches `edge.pulse.handoff.v1`.
-
-Example generated payload:
-
-```json
-{
-  "contract_version": "edge.pulse.handoff.v1",
-  "symbol": "SPY",
-  "action": "buy",
-  "confidence": 0.9,
-  "reason": "operator simulation control",
-  "mode": "paper",
-  "orb_session": "market_open",
-  "idempotency_key": "edge:SPY:buy:market_open:29698555:ui",
-  "source": "sentinel_edge",
-  "created_at": 1781390000.0,
-  "metadata": {}
-}
-```
-
-### Symbol
-
-Ticker symbol for the handoff. It is uppercased before sending.
-
-Use `GLOBAL` for portfolio-wide actions such as `stop_all`, `emergency_exit`, or global trailing changes.
-
-### Action
-
-Supported actions:
-
-| Action | What It Does |
-| --- | --- |
-| `buy` | Opens or adds to a position using current replay price. |
-| `sell` | Closes the symbol position using current replay price. |
-| `trailing_stop` | Enables trailing stop on the symbol. |
-| `opening_trailing_stop` | Enables trailing stop using the same simulation behavior as `trailing_stop`. |
-| `tighten_trailing_stop` | Enables or updates trailing percent on the symbol. |
-| `regular_stop` | Closes the symbol position using current replay price. |
-| `stop_all` | Closes all open positions. |
-| `emergency_exit` | Closes all open positions. |
-| `dca` | Processes like a buy in the current first release. |
-| `stop_buying` | Marks the ticker disabled. |
-
-### Confidence
-
-Sent as `confidence` in the handoff payload.
-
-The engine accepts it unless it is below Execution Model `Reject Below`.
-
-### Trail %
-
-Used only for actions containing `trailing`.
-
-For those actions, the UI adds:
-
-```json
-{
-  "stop_type": "trailing",
-  "trailing_percent": 2
-}
-```
-
-### Idempotency
-
-The UI builds idempotency keys with the current minute:
+Supported UI actions:
 
 ```text
-edge:{SYMBOL}:{ACTION}:market_open:{minute}:ui
+buy
+sell
+trailing_stop
+opening_trailing_stop
+tighten_trailing_stop
+regular_stop
+stop_all
+emergency_exit
+dca
+stop_buying
 ```
 
-If the same idempotency key is submitted twice, the second request does not apply side effects again. It returns the original handoff id with reason `duplicate`.
+### Positions
 
-## Position Lifecycle
+Shows simulated positions:
 
-### Buy Flow
+- Symbol
+- Quantity
+- Average entry
+- Current price
+- P&L
+- Trailing stop status
 
-A buy handoff needs a current price. Current price comes from:
+### Recorded Alerts
 
-1. `handoff.metadata.price`, `current_price`, or `market_price`
-2. `current_prices[symbol]` from replay
-3. existing position current price
+Shows recent parsed Discord alerts and drift state:
 
-If no price is available, buy rejects with:
+- Parse status
+- Action
+- Contract
+- Alert price
+- Market price
+- Drift amount and percent
 
-```text
-price_unavailable
-```
+### Decision And Event Tape
 
-If accepted:
+Shows recent simulation decisions and event-log entries such as:
 
-1. Quantity is calculated from `metadata.quantity` or Execution Model `Default Quantity`.
+- `replay_imported`
+- `replay_started`
+- `replay_stopped`
+- `handoff`
+- `buy`
+- `sell`
+- `regular_stop_sell`
+- `take_profit_sell`
+- `trailing_stop_sell`
+
+## Handoff Behavior
+
+### Buy
+
+A buy requires a price from one of:
+
+1. Handoff metadata: `price`, `current_price`, or `market_price`.
+2. Current replay price.
+3. Existing position current price.
+
+If no price is available, the buy is rejected with `price_unavailable`.
+
+When accepted:
+
+1. Quantity resolves from `metadata.quantity` or default quantity.
 2. Fill ratio is applied.
 3. Buy slippage is applied.
 4. Commission is added.
-5. Cash and position state update.
-6. A `buy` decision is added to the decision tape.
-7. A handoff event is added to the event log.
+5. Cash decreases.
+6. Position state updates.
+7. Decision and event entries are recorded.
 
-### Sell Flow
+### Sell
 
-A sell handoff requires an existing position.
+A sell requires an existing position.
 
-If no position exists, sell rejects with:
+If no position exists, it rejects with `position_not_found`.
 
-```text
-position_not_found
-```
+When accepted:
 
-If accepted:
-
-1. Current price is resolved.
+1. Current price resolves.
 2. Sell slippage is applied.
 3. Commission is subtracted.
 4. Cash increases.
-5. The position is removed.
-6. A sell decision is added to the decision tape.
+5. Position is closed or removed.
 
-### Trailing Stop Flow
+### Regular Stop
 
-When a trailing action is accepted:
-
-1. The ticker gets `trailing_enabled = true`.
-2. The ticker gets `trailing_percent`.
-3. If a position exists, that position also gets trailing fields.
-4. The position high-water mark starts from the current price.
-
-On every replay bar:
+Regular stop closes a matching position at the current simulated price when sent as a handoff. Automatic regular stop also runs on replay step when:
 
 ```text
-high_water_mark = max(previous high_water_mark, bar.high)
+bar.low <= avg_entry * (1 - stop_percent / 100)
+```
+
+### Take Profit
+
+Automatic take profit runs on replay step when:
+
+```text
+bar.high >= avg_entry * (1 + target_percent / 100)
+```
+
+### Trailing Stop
+
+Trailing actions enable or update trailing stop fields on ticker and position state.
+
+On each replay bar:
+
+```text
+high_water_mark = max(previous_high_water_mark, bar.high)
 trailing_floor = high_water_mark * (1 - trailing_percent / 100)
 ```
 
@@ -666,144 +414,390 @@ If:
 bar.low <= trailing_floor
 ```
 
-the engine closes the position at `trailing_floor` and records `trailing_stop_sell`.
+the engine closes the position at the trailing floor.
 
-## Positions Panel
+### Stop All and Emergency Exit
 
-Positions are read from the simulated account state.
+Both close every open simulated position using current simulated prices.
 
-Columns:
+### DCA
 
-- `Symbol`: ticker.
-- `Qty`: simulated filled quantity.
-- `Entry`: average entry price after slippage.
-- `Price`: latest replay close for the symbol.
-- `PnL`: unrealized P&L and percent.
-- `Trail`: trailing percent if enabled.
+Currently routes through buy behavior.
 
-## Decision And Event Tape
+### Stop Buying
 
-This panel merges recent decisions and event log entries.
+Marks the ticker disabled in ticker state.
 
-Decision examples:
+### Idempotency
 
-- `buy`
-- `sell`
-- `trailing_stop`
-- `regular_stop_sell`
-- `take_profit_sell`
-- `trailing_stop_sell`
+Duplicate handoff `idempotency_key` values return the original handoff result without applying side effects twice.
 
-Event examples:
+## Discord Recorder Details
 
-- `replay_imported`
-- `replay_started`
-- `replay_stopped`
-- `handoff`
+### Saved Settings
 
-The API stores the newest entries first.
+Stored in SQLite and returned masked:
 
-## Native Simulation API
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| GET | `/api/simulation/state` | Full engine snapshot |
-| GET | `/api/simulation/config` | Current execution settings |
-| PUT | `/api/simulation/config` | Replace execution model settings |
-| POST | `/api/simulation/reset` | Reset replay/account/decisions/logs; optional config body |
-| POST | `/api/simulation/replay/import/csv` | Import OHLCV bars |
-| GET | `/api/simulation/replay/sessions` | List imported sessions |
-| GET | `/api/simulation/replay/sessions/{session_id}` | Session metadata plus bars |
-| POST | `/api/simulation/replay/sessions/{session_id}/start` | Start replay |
-| POST | `/api/simulation/replay/step` | Advance one timestamp batch |
-| POST | `/api/simulation/replay/stop` | Stop replay |
-| POST | `/api/simulation/handoff` | Send a native handoff payload without API key |
-
-## Edge-Compatible Endpoints
-
-These let the engine stand in for Edge when Tandem reads it.
-
-| Method | Endpoint | Behavior |
-| --- | --- | --- |
-| GET | `/api/live` | Returns liveness. |
-| GET | `/api/ready` | Always ready in this first release. |
-| GET | `/api/automation` | Returns handoff settings and last handoff. |
-| GET | `/api/decisions` | Returns decision tape. |
-| GET | `/api/pulse/handoff/schema` | Returns `edge.pulse.handoff.v1` schema document. |
-| GET | `/api/pulse/account` | Returns simulated account status. |
-| GET | `/api/pulse/positions` | Returns simulated positions. |
-| GET | `/api/price/{symbol}` | Returns current replay price or 404. |
-| GET | `/api/quote/{symbol}` | Returns current replay quote or 404. |
-
-## Pulse-Compatible Edge Endpoints
-
-These let the engine stand in for Pulse when Edge or Tandem calls Pulse's Edge integration API.
-
-All require:
-
-```text
-X-API-Key: local-sim-key
+```json
+{
+  "discord_token": "********",
+  "discord_channel_ids": ["123456789", "987654321"],
+  "drift_amount_threshold": 0.05,
+  "drift_percent_threshold": 10.0,
+  "yfinance_enabled": false,
+  "record_all_channels": false
+}
 ```
 
-| Method | Endpoint | Behavior |
+If the saved token field is submitted as `********`, the existing token is preserved.
+
+`discord_channel_ids` is normalized on save. Duplicate IDs are removed, and pasted newline, comma, semicolon, or space-separated values become a stable list.
+
+### Discord Diagnostics
+
+`POST /api/recorder/discord/test` checks:
+
+- token configured
+- token authentication through Discord REST
+- bot user identity
+- configured channel accessibility
+- `record_all_channels` mode
+- current recorder state and last error
+
+The response never includes the token.
+
+### Channel And Author Filtering
+
+A message is recorded only when:
+
+- the source channel is enabled
+- `record_all_channels` is true, the channel ID is configured, or the channel is a known source
+- author is not in `ignored_author_ids`
+- author is in `allowed_author_ids` when that allow-list is non-empty
+- message is not from the bot itself
+
+### Alert Parsing
+
+The parser understands:
+
+- buy/open words such as `BTO`, `BUY`, `ENTRY`, `ENTERING`, `LONG`
+- sell/exit words such as `STC`, `SELL`, `TRIM`, `CLOSE`, `EXIT`, `OUT`
+- average-down words such as `AVG DOWN`, `ADDING`, `ADD TO`
+- contract forms such as `SPY 500C 6/21 @ 1.25`
+- percentage exits such as `SELL 50%`
+- embed title, description, field, author, and footer text
+
+Contract keys normalize as:
+
+```text
+UNDERLYING|YYYY-MM-DD|STRIKE|CALL
+UNDERLYING|YYYY-MM-DD|STRIKE|PUT
+```
+
+Unparsed messages are still stored for parser improvement.
+
+### Market Snapshot And Drift
+
+When a parsed alert has an option contract:
+
+1. The recorder looks up the latest option bar at or before the alert timestamp.
+2. It also looks up stock price when available.
+3. It selects option market price from `mid`, `last`, `close`, bid/ask midpoint, bid, or ask.
+4. It stores a snapshot.
+5. It calculates price drift.
+
+Drift formula:
+
+```text
+price_drift_amount = market_price_at_alert - alert_price
+price_drift_pct = price_drift_amount / alert_price * 100
+```
+
+`price_drift_alert` is true when:
+
+```text
+abs(price_drift_amount) >= drift_amount_threshold
+or
+abs(price_drift_pct) >= drift_percent_threshold
+```
+
+## Consolidation Test Feed
+
+The engine publishes a stable replay contract for Consolidation:
+
+```text
+GET /api/consolidation/replay/events
+```
+
+Query parameters:
+
+| Parameter | Purpose |
+| --- | --- |
+| `limit` | Maximum events returned. |
+| `channel_id` | Optional legacy single-channel filter. |
+| `channel_ids` | Optional comma, space, or newline-separated multi-channel filter. |
+| `since` | Optional minimum Discord timestamp. |
+
+Response contract:
+
+```json
+{
+  "contract_version": "simulation.consolidation.replay.v1",
+  "event_count": 1,
+  "filters": {
+    "channel_id": null,
+    "channel_ids": ["123", "456"],
+    "since": null,
+    "limit": 1000
+  },
+  "next_cursor": null,
+  "events": [
+    {
+      "event_id": "discord_alert:m1",
+      "type": "discord_alert",
+      "timestamp": "2026-06-19T14:30:00+00:00",
+      "channel_id": "123",
+      "payload": {
+        "message": {},
+        "alert": {},
+        "market_snapshot": {},
+        "price_drift": {}
+      }
+    }
+  ]
+}
+```
+
+Write a JSONL test-run manifest:
+
+```text
+POST /api/consolidation/test-runs
+```
+
+Request:
+
+```json
+{
+  "name": "Consolidation smoke",
+  "channel_ids": ["123", "456"],
+  "since": null,
+  "limit": 1000
+}
+```
+
+`channel_id` is still accepted for older single-channel callers. New integrations should prefer `channel_ids`.
+
+The manifest is written under:
+
+```text
+data/recordings/YYYY-MM-DD/consolidation-test-runs/
+```
+
+This is still recorder-only. It does not trade.
+
+## API Reference
+
+All paths below are prefixed by `/api`.
+
+### Health And Static UI
+
+| Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/edge/status` | Simulated Pulse Edge API status. |
-| GET | `/api/edge/account/status` | Simulated account with positions array. |
-| GET | `/api/edge/tickers` | Tickers imported from replay or touched by handoffs. |
-| GET | `/api/edge/positions/{symbol}` | Position detail or `has_position: false`. |
-| POST | `/api/edge/handoff` | Primary structured handoff endpoint. |
-| POST | `/api/edge/tickers/{symbol}/decision` | Legacy decision endpoint mapped into handoff actions. |
-| POST | `/api/edge/tickers/{symbol}/trailing` | Legacy trailing endpoint mapped into `trailing_stop`. |
-| POST | `/api/edge/signals/evaluate` | Lightweight signal scoring response. |
+| GET | `/health` | Service health and replay summary. |
+| GET | `/live` | Edge-style liveness. |
+| GET | `/ready` | Readiness response. |
+| GET | `/` | Built UI when `dist/index.html` exists. |
 
-## Legacy Decision Mapping
+### Native Simulation
 
-`POST /api/edge/tickers/{symbol}/decision` maps older Pulse commands into structured handoff actions:
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/simulation/state` | Full simulation snapshot. |
+| GET | `/simulation/config` | Current execution settings. |
+| PUT | `/simulation/config` | Replace execution settings. |
+| POST | `/simulation/reset` | Reset replay/account/decisions/logs. |
+| POST | `/simulation/replay/import/csv` | Import OHLCV replay CSV. |
+| GET | `/simulation/replay/sessions` | List imported replay sessions. |
+| GET | `/simulation/replay/sessions/{session_id}` | Session metadata and bars. |
+| POST | `/simulation/replay/sessions/{session_id}/start` | Start replay. |
+| POST | `/simulation/replay/step` | Advance one timestamp batch. |
+| POST | `/simulation/replay/stop` | Stop replay. |
+| POST | `/simulation/handoff` | Native handoff without API key. |
 
-| Legacy Input | Structured Action |
+### Edge-Compatible Facade
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/automation` | Automation settings and last handoff. |
+| GET | `/decisions` | Decision tape. |
+| GET | `/pulse/handoff/schema` | `edge.pulse.handoff.v1` schema document. |
+| GET | `/pulse/account` | Simulated account status. |
+| GET | `/pulse/positions` | Simulated positions. |
+| GET | `/price/{symbol}` | Current replay price. |
+| GET | `/quote/{symbol}` | Current replay quote. |
+
+### Pulse-Compatible Edge API
+
+These require `X-API-Key: local-sim-key`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/edge/status` | Pulse Edge integration status. |
+| GET | `/edge/account/status` | Account and positions array. |
+| GET | `/edge/tickers` | Ticker states. |
+| GET | `/edge/positions/{symbol}` | Position detail or no-position response. |
+| POST | `/edge/handoff` | Primary structured handoff endpoint. |
+| POST | `/edge/tickers/{symbol}/decision` | Legacy decision endpoint mapped into handoff actions. |
+| POST | `/edge/tickers/{symbol}/trailing` | Legacy trailing endpoint mapped into `trailing_stop`. |
+| POST | `/edge/signals/evaluate` | Lightweight signal scoring. |
+
+Legacy decision mapping:
+
+| Input | Structured action |
 | --- | --- |
 | `enable_trailing_stop` | `trailing_stop` |
 | `trailing` | `trailing_stop` |
 | `emergency_stop` | `emergency_exit` |
 | `stop` | `regular_stop` |
-| anything else | passed through as action |
+| anything else | passed through |
+
+### Recorder Settings And Capture
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/recorder/discord/settings` | Read masked recorder settings. |
+| PUT | `/recorder/discord/settings` | Save token, channels, drift thresholds, and provider flags. |
+| POST | `/recorder/discord/test` | Run Discord REST diagnostics. |
+| POST | `/recorder/discord/start` | Start Discord listener. |
+| POST | `/recorder/discord/stop` | Stop Discord listener. |
+| GET | `/recorder/discord/status` | Recorder counts and state. |
+| POST | `/recorder/discord/parse-preview` | Parse sample text without inserting. |
+| POST | `/recorder/discord/ingest-message` | Ingest a synthetic Discord message. |
+| POST | `/recorder/dev/ingest-message` | Development alias for synthetic ingest. |
+| POST | `/recorder/discord/import-csv` | Import Discord message CSV. |
+| POST | `/recorder/market/import/options-csv` | Import option bars. |
+| POST | `/recorder/market/import/stocks-csv` | Import stock bars. |
+
+### Recorder Data
+
+Message, alert, replay, export, and Consolidation endpoints accept `channel_id` for one channel or `channel_ids` for a comma-separated channel set.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/recordings/sessions/start` | Start a capture session boundary. |
+| POST | `/recordings/sessions/stop` | Stop active capture session. |
+| GET | `/recordings/sessions/active` | Read active session. |
+| GET | `/recordings/sessions` | List capture sessions. |
+| GET | `/recordings/messages` | List Discord messages. |
+| GET | `/recordings/alerts` | List parsed alerts. |
+| GET | `/recordings/market-bars` | List imported/observed market bars. |
+| GET | `/recordings/market-snapshots` | List snapshots. |
+| GET | `/recordings/drift-events` | List drift events. |
+| POST | `/recordings/export` | Write alert or joined CSV export. |
+| GET | `/recordings/exports` | List export records. |
+| GET | `/replay/events` | Generic chronological truth stream. |
+
+### Consolidation
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/consolidation/replay/events` | Joined replay event stream for Consolidation. |
+| POST | `/consolidation/test-runs` | Write JSONL replay test-run manifest. |
+
+## Data Files
+
+| Path | Purpose |
+| --- | --- |
+| `data/simulation_engine.sqlite3` | Recorder SQLite database. |
+| `data/recordings/` | CSV and JSONL exports. |
+| `dist/` | Built React control panel. |
+| `.venv/` | Local Python environment. |
+| `node_modules/` | Frontend dependencies. |
+
+## Tandem Suite Integration
+
+Point both bot URLs at this app:
+
+```powershell
+$env:EDGE_API_URL = "http://127.0.0.1:9200"
+$env:PULSE_API_URL = "http://127.0.0.1:9200"
+$env:PULSE_EDGE_API_KEY = "local-sim-key"
+```
+
+In this mode:
+
+- Tandem reads Edge-style status from `/api/live`, `/api/ready`, `/api/automation`, `/api/decisions`, and `/api/pulse/*`.
+- Tandem reads Pulse-style status from `/api/health` and `/api/edge/*`.
+- Both facades use the same simulation state.
+
+## Consolidation Integration
+
+In Consolidation, set:
+
+```powershell
+$env:SIMULATION_ENGINE_REPLAY_URL = "http://127.0.0.1:9200/api/consolidation/replay/events"
+```
+
+Then Consolidation can call:
+
+```text
+POST /api/simulation-engine/replay-preview
+```
+
+to run recorded engine events through Consolidation parser/source-policy logic without inserting alerts or sending broker orders.
 
 ## Common Workflows
 
-### Make Tandem Show A Live Position
+### Make Tandem Show A Simulated Position
 
-1. Start Simulation Engine on port `9200`.
-2. Start Tandem with both URLs pointed at `http://127.0.0.1:9200` and key `local-sim-key`.
-3. Import a CSV with at least one `SPY` row.
-4. Select the imported session.
-5. Press `Start` or `Step` until `Current Prices` shows `SPY`.
-6. In Handoff Composer, use symbol `SPY`, action `buy`, confidence `0.9`.
-7. Press `Send Handoff`.
-8. Tandem will read the resulting position through `/api/edge/account/status` and `/api/pulse/positions`.
+1. Start this engine on port `9200`.
+2. Import OHLCV CSV with at least one `SPY` row.
+3. Select the replay session.
+4. Press `Start` or `Step` until `Current Prices` includes `SPY`.
+5. Send a `buy` from Handoff Composer.
+6. Tandem can read the resulting position from Pulse and Edge facade endpoints.
 
 ### Test A Trailing Stop
 
-1. Import bars where price rises, then the later bar low falls below the trailing floor.
+1. Import bars where price rises, then a later low crosses the trailing floor.
 2. Step to the first price.
 3. Send `buy`.
-4. Send `trailing_stop` with Trail `%`.
+4. Send `trailing_stop`.
 5. Continue replay.
-6. When `bar.low <= high_water_mark * (1 - trail / 100)`, the engine sells and records `trailing_stop_sell`.
+6. The engine closes the position when replay low crosses the trailing threshold.
 
-### Test Risk Rejection
+### Build A Consolidation Test Dataset
 
-1. Set `Reject Below` to `0.8`.
-2. Save model.
-3. Send a handoff with `Confidence` `0.5`.
-4. The response is rejected with `confidence_below_threshold`.
+1. Start a capture session.
+2. Import or listen to Discord alert messages.
+3. Import option price CSV for matching contracts.
+4. Review recorded alerts and drift.
+5. Export `joined` CSV for analysis.
+6. Use the Consolidation Replay panel to write JSONL.
+7. Point Consolidation at `/api/consolidation/replay/events`.
 
-### Test Allocation Rejection
+## Project Structure
 
-1. Set low Starting Cash or low Max Allocation `%`.
-2. Set high Default Quantity.
-3. Replay a price.
-4. Send `buy`.
-5. If cost exceeds cash or allocation cap, the response is rejected with `risk_limit`.
+```text
+Simulation-Engine/
+  simulation_engine/
+    api.py                  FastAPI app and Edge/Pulse facades
+    core.py                 replay and simulated account engine
+    csv_import.py           OHLCV CSV parser
+    models.py               simulation and handoff models
+    alert_parser.py         Discord option alert parser
+    discord_recorder.py     Discord listener and recorder orchestration
+    discord_diagnostics.py  Discord REST diagnostics
+    market_recorder.py      stock/option bar import, snapshots, drift
+    recorder_api.py         recorder and Consolidation replay routes
+    recording_store.py      SQLite persistence and exports
+  frontend/src/
+    App.tsx                 control panel
+    api.ts                  typed API client
+    styles.css              dashboard styles
+  tests/                    backend and recorder tests
+  Launch-Sentinel-Simulation-Engine.ps1
+```
 
 ## Verification
 
@@ -814,8 +808,60 @@ npm run build
 python -m unittest tests.test_launcher_lifecycle_static -v
 ```
 
-Expected backend result:
+Expected:
+
+- Python tests pass.
+- Vite build writes `dist/`.
+- Launcher smoke test reports prerequisites without starting the app.
+
+## Troubleshooting
+
+### `discord_token_missing`
+
+No saved token and no `DISCORD_BOT_TOKEN` environment variable exist. Save a token in the UI or set the environment variable.
+
+### `invalid_token`
+
+Discord REST rejected the bot token. Regenerate or re-copy the token from the Discord Developer Portal.
+
+### Channel Access Fails
+
+Check that:
+
+- channel ID is correct
+- bot was invited to the server
+- bot can view the channel
+- bot can read message history
+- Message Content Intent is enabled if you need message body parsing
+
+### Imported Alerts Do Not Parse
+
+Use Parse Preview and compare the raw alert text to supported parser formats. Unparsed rows remain in SQLite so parser work can be done later.
+
+### Drift Is Unavailable
+
+Make sure option market CSV rows use the same normalized contract:
 
 ```text
-all tests pass
+UNDERLYING|YYYY-MM-DD|STRIKE|CALL_OR_PUT
 ```
+
+and the market bar timestamp is at or before the Discord alert timestamp.
+
+### Browser Shows Old UI
+
+Run:
+
+```powershell
+npm run build
+```
+
+Then restart uvicorn or the launcher.
+
+## Current Limitations
+
+- Simulated replay state is in memory and resets on process restart.
+- The Discord recorder is not a broker, paper trader, or portfolio simulator.
+- yfinance quote enrichment depends on network availability and third-party data behavior.
+- The parser is intentionally conservative; unsupported analyst formats are stored as unparsed.
+- Consolidation JSONL manifests are replay inputs, not execution records.

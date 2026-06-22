@@ -75,6 +75,7 @@ export type RecorderSettings = {
 export type RecorderStatus = {
   discord_connected: boolean;
   discord_state: string;
+  active_session_id?: string | null;
   monitored_channels: string[];
   messages_recorded: number;
   parsed_alerts: number;
@@ -82,6 +83,18 @@ export type RecorderStatus = {
   drift_alerts: number;
   last_message_timestamp?: string | null;
   last_error: string;
+};
+
+export type DiscordTestResult = {
+  ok: boolean;
+  status?: string;
+  token_configured?: boolean;
+  channel_ids?: string[];
+  record_all_channels?: boolean;
+  channels?: Array<Record<string, unknown>>;
+  bot_user?: Record<string, unknown> | null;
+  state?: string;
+  last_error?: string;
 };
 
 export type ParsedAlert = {
@@ -119,6 +132,58 @@ export type ExportRecord = {
   file_path: string;
   row_count: number;
 };
+
+export type RecordingSession = {
+  session_id: string;
+  started_at: string;
+  stopped_at?: string | null;
+  channel_ids: string[];
+  source: string;
+  notes: string;
+};
+
+export type ConsolidationReplayEvent = {
+  event_id: string;
+  type: 'discord_alert';
+  timestamp: string;
+  channel_id: string;
+  payload: Record<string, unknown>;
+};
+
+export type ConsolidationReplayResponse = {
+  contract_version: string;
+  event_count: number;
+  filters: Record<string, unknown>;
+  next_cursor?: string | null;
+  events: ConsolidationReplayEvent[];
+};
+
+export type ConsolidationTestRun = {
+  contract_version: string;
+  run_id: string;
+  name: string;
+  created_at: string;
+  execution_mode: string;
+  replay_contract_version: string;
+  event_count: number;
+  file_path: string;
+  replay_url: string;
+  filters: Record<string, unknown>;
+};
+
+function queryString(params: Record<string, string | number | null | undefined>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') search.set(key, String(value));
+  }
+  const text = search.toString();
+  return text ? `?${text}` : '';
+}
+
+function channelIdsValue(channelIds?: string[]) {
+  const clean = (channelIds ?? []).map((item) => item.trim()).filter(Boolean);
+  return clean.length ? clean.join(',') : undefined;
+}
 
 export async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
@@ -169,9 +234,15 @@ export const api = {
       body: JSON.stringify(settings),
     }),
   recorderStatus: () => requestJson<RecorderStatus>('/api/recorder/discord/status'),
-  testDiscordRecorder: () => requestJson<Record<string, unknown>>('/api/recorder/discord/test', { method: 'POST', body: '{}' }),
+  testDiscordRecorder: () => requestJson<DiscordTestResult>('/api/recorder/discord/test', { method: 'POST', body: '{}' }),
   startDiscordRecorder: () => requestJson<RecorderStatus>('/api/recorder/discord/start', { method: 'POST', body: '{}' }),
   stopDiscordRecorder: () => requestJson<RecorderStatus>('/api/recorder/discord/stop', { method: 'POST', body: '{}' }),
+  startRecordingSession: (notes = '', source = 'ui') =>
+    requestJson<{ active_session_id: string; session: RecordingSession; status: string }>('/api/recordings/sessions/start', {
+      method: 'POST',
+      body: JSON.stringify({ notes, source }),
+    }),
+  stopRecordingSession: () => requestJson<{ active_session_id: string | null; session: RecordingSession | null; status: string }>('/api/recordings/sessions/stop', { method: 'POST', body: '{}' }),
   parsePreview: (rawText: string) =>
     requestJson<ParsedAlert>('/api/recorder/discord/parse-preview', {
       method: 'POST',
@@ -195,10 +266,17 @@ export const api = {
   recorderAlerts: () => requestJson<{ alerts: ParsedAlert[] }>('/api/recordings/alerts?limit=50'),
   recorderDriftEvents: () => requestJson<{ drift_events: PriceDriftEvent[] }>('/api/recordings/drift-events?limit=50'),
   recorderExports: () => requestJson<{ exports: ExportRecord[] }>('/api/recordings/exports?limit=20'),
-  exportRecordings: (channelId?: string) =>
+  exportRecordings: (channelIds?: string[], exportType: 'alerts' | 'joined' = 'joined') =>
     requestJson<ExportRecord>('/api/recordings/export', {
       method: 'POST',
-      body: JSON.stringify({ channel_id: channelId || null }),
+      body: JSON.stringify({ channel_ids: channelIds ?? [], export_type: exportType }),
     }),
   replayEvents: () => requestJson<{ events: Array<Record<string, unknown>> }>('/api/replay/events?limit=100'),
+  consolidationReplayEvents: (channelIds?: string[], since?: string, limit = 100) =>
+    requestJson<ConsolidationReplayResponse>(`/api/consolidation/replay/events${queryString({ channel_ids: channelIdsValue(channelIds), since, limit })}`),
+  createConsolidationTestRun: (name: string, channelIds?: string[], since?: string, limit = 1000) =>
+    requestJson<ConsolidationTestRun>('/api/consolidation/test-runs', {
+      method: 'POST',
+      body: JSON.stringify({ name, channel_ids: channelIds ?? [], since: since || null, limit }),
+    }),
 };

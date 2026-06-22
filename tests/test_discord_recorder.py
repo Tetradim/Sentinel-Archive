@@ -73,3 +73,42 @@ def test_handle_message_respects_author_filters(tmp_path):
         assert await store.list_messages() == []
 
     asyncio.run(run())
+
+
+def test_test_connection_uses_injected_diagnostics_without_exposing_token(tmp_path):
+    class FakeDiagnostics:
+        def __init__(self):
+            self.calls = []
+
+        async def run(self, *, token, channel_ids, record_all_channels):
+            self.calls.append(
+                {
+                    "token": token,
+                    "channel_ids": channel_ids,
+                    "record_all_channels": record_all_channels,
+                }
+            )
+            return {
+                "ok": True,
+                "status": "ok",
+                "token_configured": True,
+                "channel_ids": channel_ids,
+                "record_all_channels": record_all_channels,
+                "channels": [{"channel_id": "123", "accessible": True, "name": "alerts"}],
+            }
+
+    async def run():
+        store = RecordingStore(tmp_path / "recorder.sqlite3")
+        await store.initialize()
+        await store.save_settings(RecorderSettings(discord_token="secret-token", discord_channel_ids=["123"]))
+        diagnostics = FakeDiagnostics()
+        recorder = DiscordRecorder(store, diagnostics=diagnostics)
+
+        result = await recorder.test_connection()
+
+        assert result["ok"] is True
+        assert result["channels"][0]["accessible"] is True
+        assert diagnostics.calls[0]["token"] == "secret-token"
+        assert "secret-token" not in str(result)
+
+    asyncio.run(run())

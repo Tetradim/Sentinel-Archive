@@ -21,6 +21,7 @@ from .recorder_models import (
     PriceDriftEvent,
     RecorderSettings,
     RecordingSession,
+    normalize_channel_ids,
 )
 
 
@@ -334,12 +335,25 @@ class RecordingStore:
                 row = await cur.fetchone()
         return json.loads(row["data"]) if row else None
 
-    async def list_messages(self, limit: int = 100, channel_id: str | None = None) -> list[dict[str, Any]]:
-        return await self._list_json("discord_messages", "discord_timestamp", limit, channel_id=channel_id)
+    async def list_messages(
+        self,
+        limit: int = 100,
+        channel_id: str | None = None,
+        channel_ids: Any = None,
+    ) -> list[dict[str, Any]]:
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        return await self._list_json("discord_messages", "discord_timestamp", limit, channel_ids=channels)
 
-    async def list_alerts(self, limit: int = 100, channel_id: str | None = None) -> list[dict[str, Any]]:
-        where = "WHERE m.channel_id = ?" if channel_id else ""
-        params: tuple[Any, ...] = (channel_id, limit) if channel_id else (limit,)
+    async def list_alerts(
+        self,
+        limit: int = 100,
+        channel_id: str | None = None,
+        channel_ids: Any = None,
+    ) -> list[dict[str, Any]]:
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        channel_filter, params = _channel_filter_sql("m.channel_id", channels)
+        where = f"WHERE {channel_filter}" if channel_filter else ""
+        params.append(int(limit))
         async with self._connect() as conn:
             async with conn.execute(
                 f"""
@@ -350,7 +364,7 @@ class RecordingStore:
                 ORDER BY m.discord_timestamp DESC
                 LIMIT ?
                 """,
-                params,
+                tuple(params),
             ) as cur:
                 rows = await cur.fetchall()
         return [json.loads(row["data"]) for row in rows]
@@ -367,27 +381,92 @@ class RecordingStore:
     async def list_exports(self, limit: int = 100) -> list[dict[str, Any]]:
         return await self._list_json("exports", "created_at", limit)
 
+    async def joined_alert_records(
+        self,
+        *,
+        channel_id: str | None = None,
+        channel_ids: Any = None,
+        limit: int = 1000,
+        since: str | None = None,
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        channel_filter, channel_params = _channel_filter_sql("m.channel_id", channels)
+        if channel_filter:
+            where.append(channel_filter)
+            params.extend(channel_params)
+        if since:
+            where.append("m.discord_timestamp >= ?")
+            params.append(since)
+        params.append(int(limit))
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+        async with self._connect() as conn:
+            async with conn.execute(
+                f"""
+                SELECT
+                    m.data AS message_data,
+                    a.data AS alert_data,
+                    s.data AS snapshot_data,
+                    d.data AS drift_data
+                FROM parsed_alerts a
+                JOIN discord_messages m ON m.message_id = a.message_id
+                LEFT JOIN market_snapshots s ON s.alert_id = a.message_id
+                LEFT JOIN price_drift_events d ON d.alert_id = a.message_id
+                {where_clause}
+                ORDER BY m.discord_timestamp ASC, m.engine_received_timestamp ASC
+                LIMIT ?
+                """,
+                tuple(params),
+            ) as cur:
+                rows = await cur.fetchall()
+
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            message = json.loads(row["message_data"])
+            alert = json.loads(row["alert_data"])
+            snapshot = json.loads(row["snapshot_data"]) if row["snapshot_data"] else None
+            drift = json.loads(row["drift_data"]) if row["drift_data"] else None
+            records.append(
+                {
+                    "message": message,
+                    "alert": alert,
+                    "market_snapshot": snapshot,
+                    "price_drift": drift,
+                    "timestamp": message.get("discord_timestamp") or message.get("engine_received_timestamp") or "",
+                    "channel_id": message.get("channel_id", ""),
+                }
+            )
+        return records
+
     async def export_alerts(
         self,
         output_root: str | Path = "data/recordings",
         *,
         channel_id: str | None = None,
+        channel_ids: Any = None,
         created_at: str | None = None,
         format: str = "csv",
+        export_type: str = "alerts",
     ) -> ExportRecord:
         if format != "csv":
             raise ValueError("only csv exports are currently supported")
+        if export_type not in {"alerts", "joined"}:
+            raise ValueError("export_type must be alerts or joined")
 
-        rows = await self._joined_alert_rows(channel_id=channel_id)
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        rows = await self._joined_alert_rows(channel_ids=channels, include_market=export_type == "joined")
         export_time = _parse_datetime(created_at)
-        channel_meta = _channel_meta(rows, channel_id)
+        channel_meta = _channel_meta(rows, channels)
         folder = (
             Path(output_root)
             / export_time.strftime("%Y-%m-%d")
             / f"channel-{channel_meta['channel_id']}-{_safe_slug(channel_meta['channel_name'])}"
         )
         folder.mkdir(parents=True, exist_ok=True)
-        file_path = folder / f"{export_time.strftime('%Y%m%d-%H%M%S')}-alerts.csv"
+        suffix = "joined-alerts" if export_type == "joined" else "alerts"
+        file_path = folder / f"{export_time.strftime('%Y%m%d-%H%M%S')}-{suffix}.csv"
         fields = [
             "discord_timestamp",
             "engine_received_timestamp",
@@ -412,6 +491,30 @@ class RecordingStore:
             "contract_key",
             "raw_text",
         ]
+        if export_type == "joined":
+            fields.extend(
+                [
+                    "session_id",
+                    "snapshot_timestamp",
+                    "underlying",
+                    "stock_price",
+                    "option_contract_key",
+                    "option_bid",
+                    "option_ask",
+                    "option_mid",
+                    "option_last",
+                    "selected_market_price",
+                    "price_source",
+                    "lookup_status",
+                    "market_price",
+                    "price_drift_amount",
+                    "price_drift_pct",
+                    "drift_amount_threshold",
+                    "drift_percent_threshold",
+                    "drift_direction",
+                    "price_drift_alert",
+                ]
+            )
         with file_path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
@@ -426,65 +529,80 @@ class RecordingStore:
             format="csv",
             file_path=str(file_path),
             row_count=len(rows),
-            filters={"channel_id": channel_id},
+            filters={"channel_id": channels[0] if len(channels) == 1 else None, "channel_ids": channels, "export_type": export_type},
         )
-        await self._insert_export(record)
+        await self.insert_export_record(record)
         return record
 
-    async def _joined_alert_rows(self, *, channel_id: str | None = None) -> list[dict[str, Any]]:
-        where = "WHERE m.channel_id = ?" if channel_id else ""
-        params = (channel_id,) if channel_id else ()
-        async with self._connect() as conn:
-            async with conn.execute(
-                f"""
-                SELECT m.data AS message_data, a.data AS alert_data
-                FROM parsed_alerts a
-                JOIN discord_messages m ON m.message_id = a.message_id
-                {where}
-                ORDER BY m.discord_timestamp ASC, m.engine_received_timestamp ASC
-                """,
-                params,
-            ) as cur:
-                rows = await cur.fetchall()
-
+    async def _joined_alert_rows(self, *, channel_ids: Any = None, include_market: bool = False) -> list[dict[str, Any]]:
+        records = await self.joined_alert_records(channel_ids=channel_ids, limit=100000)
         flattened: list[dict[str, Any]] = []
-        for row in rows:
-            message = json.loads(row["message_data"])
-            alert = json.loads(row["alert_data"])
+        for record in records:
+            message = record["message"]
+            alert = record["alert"]
+            snapshot = record.get("market_snapshot") or {}
+            drift = record.get("price_drift") or {}
             normalized = alert.get("normalized") or {}
-            flattened.append(
-                {
-                    **{key: message.get(key) for key in [
-                        "discord_timestamp",
-                        "engine_received_timestamp",
-                        "channel_id",
-                        "channel_name",
-                        "guild_id",
-                        "guild_name",
-                        "author_id",
-                        "author_name",
-                        "message_id",
-                        "content",
-                    ]},
-                    **{key: alert.get(key) for key in [
-                        "parse_status",
-                        "parse_error",
-                        "action",
-                        "ticker",
-                        "expiration",
-                        "strike",
-                        "option_type",
-                        "alert_price",
-                        "sell_percentage",
-                        "confidence",
-                        "raw_text",
-                    ]},
-                    "contract_key": normalized.get("contract_key", ""),
-                }
-            )
+            row = {
+                **{key: message.get(key) for key in [
+                    "discord_timestamp",
+                    "engine_received_timestamp",
+                    "session_id",
+                    "channel_id",
+                    "channel_name",
+                    "guild_id",
+                    "guild_name",
+                    "author_id",
+                    "author_name",
+                    "message_id",
+                    "content",
+                ]},
+                **{key: alert.get(key) for key in [
+                    "parse_status",
+                    "parse_error",
+                    "action",
+                    "ticker",
+                    "expiration",
+                    "strike",
+                    "option_type",
+                    "alert_price",
+                    "sell_percentage",
+                    "confidence",
+                    "raw_text",
+                ]},
+                "contract_key": normalized.get("contract_key", ""),
+            }
+            if include_market:
+                row.update(
+                    {
+                        **{key: snapshot.get(key) for key in [
+                            "snapshot_timestamp",
+                            "underlying",
+                            "stock_price",
+                            "option_contract_key",
+                            "option_bid",
+                            "option_ask",
+                            "option_mid",
+                            "option_last",
+                            "selected_market_price",
+                            "price_source",
+                            "lookup_status",
+                        ]},
+                        **{key: drift.get(key) for key in [
+                            "market_price",
+                            "price_drift_amount",
+                            "price_drift_pct",
+                            "drift_amount_threshold",
+                            "drift_percent_threshold",
+                            "drift_direction",
+                            "price_drift_alert",
+                        ]},
+                    }
+                )
+            flattened.append(row)
         return flattened
 
-    async def _insert_export(self, record: ExportRecord) -> None:
+    async def insert_export_record(self, record: ExportRecord) -> None:
         async with self._connect() as conn:
             await conn.execute(
                 """
@@ -510,7 +628,7 @@ class RecordingStore:
         order_col: str,
         limit: int,
         *,
-        channel_id: str | None = None,
+        channel_ids: Any = None,
     ) -> list[dict[str, Any]]:
         if table not in {
             "discord_sources",
@@ -526,12 +644,14 @@ class RecordingStore:
         if not re.fullmatch(r"[a-z_]+", order_col):
             raise ValueError("unsupported order column")
 
-        where = "WHERE channel_id = ?" if channel_id and table == "discord_messages" else ""
-        params: tuple[Any, ...] = (channel_id, int(limit)) if where else (int(limit),)
+        channels = normalize_channel_ids(channel_ids)
+        channel_filter, params = _channel_filter_sql("channel_id", channels) if table == "discord_messages" else ("", [])
+        where = f"WHERE {channel_filter}" if channel_filter else ""
+        params.append(int(limit))
         async with self._connect() as conn:
             async with conn.execute(
                 f"SELECT data FROM {table} {where} ORDER BY {order_col} DESC LIMIT ?",
-                params,
+                tuple(params),
             ) as cur:
                 rows = await cur.fetchall()
         return [json.loads(row["data"]) for row in rows]
@@ -558,11 +678,36 @@ def _safe_slug(value: str | None) -> str:
     return slug or "unknown"
 
 
-def _channel_meta(rows: list[dict[str, Any]], channel_id: str | None) -> dict[str, str]:
-    if rows:
+def _channel_filter_sql(column: str, channel_ids: list[str]) -> tuple[str, list[Any]]:
+    if not channel_ids:
+        return "", []
+    placeholders = ", ".join("?" for _ in channel_ids)
+    return f"{column} IN ({placeholders})", list(channel_ids)
+
+
+def _channel_meta(rows: list[dict[str, Any]], channel_ids: list[str]) -> dict[str, str]:
+    if len(channel_ids) == 1:
+        channel_id = channel_ids[0]
+        row = next((item for item in rows if str(item.get("channel_id", "")) == channel_id), None)
+        return {
+            "channel_id": channel_id,
+            "channel_name": str((row or {}).get("channel_name") or "unknown"),
+        }
+
+    if len(channel_ids) > 1:
+        return {"channel_id": "-".join(channel_ids), "channel_name": "multi-channels"}
+
+    row_channels: list[str] = []
+    for row in rows:
+        channel_id = str(row.get("channel_id") or "").strip()
+        if channel_id and channel_id not in row_channels:
+            row_channels.append(channel_id)
+
+    if len(row_channels) == 1:
         first = rows[0]
         return {
-            "channel_id": str(first.get("channel_id") or channel_id or "all"),
+            "channel_id": row_channels[0],
             "channel_name": str(first.get("channel_name") or "unknown"),
         }
-    return {"channel_id": str(channel_id or "all"), "channel_name": "all-channels" if channel_id is None else "unknown"}
+
+    return {"channel_id": "all", "channel_name": "all-channels"}

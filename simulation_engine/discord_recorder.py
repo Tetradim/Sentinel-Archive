@@ -4,22 +4,31 @@ import asyncio
 import os
 import threading
 from typing import Any
+from uuid import uuid4
 
 from .alert_parser import build_discord_alert_text, parse_alert_text
+from .discord_diagnostics import DiscordConnectionDiagnostics
 from .market_recorder import YFinanceMarketProvider, create_snapshot_for_alert
-from .recorder_models import DiscordMessageRecord, DiscordSource, RecorderStatus
+from .recorder_models import DiscordMessageRecord, DiscordSource, RecorderStatus, RecordingSession, utc_now_iso
 from .recording_store import RecordingStore
 
 
 class DiscordRecorder:
-    def __init__(self, store: RecordingStore, market_provider: YFinanceMarketProvider | None = None):
+    def __init__(
+        self,
+        store: RecordingStore,
+        market_provider: YFinanceMarketProvider | None = None,
+        diagnostics: DiscordConnectionDiagnostics | None = None,
+    ):
         self.store = store
         self.market_provider = market_provider or YFinanceMarketProvider()
+        self.diagnostics = diagnostics or DiscordConnectionDiagnostics()
         self.bot: Any | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.thread: threading.Thread | None = None
         self.state = "stopped"
         self.last_error = ""
+        self.active_session: RecordingSession | None = None
 
     async def start(self) -> RecorderStatus:
         settings = await self.store.get_settings(mask_token=False)
@@ -51,16 +60,38 @@ class DiscordRecorder:
 
     async def test_connection(self) -> dict[str, Any]:
         settings = await self.store.get_settings(mask_token=False)
-        token_configured = bool(settings.discord_token or os.environ.get("DISCORD_BOT_TOKEN"))
-        channels = settings.discord_channel_ids
-        return {
-            "ok": token_configured and (settings.record_all_channels or bool(channels)),
-            "token_configured": token_configured,
-            "channel_ids": channels,
-            "record_all_channels": settings.record_all_channels,
-            "state": self.state,
-            "last_error": self.last_error,
-        }
+        token = settings.discord_token or os.environ.get("DISCORD_BOT_TOKEN", "")
+        result = await self.diagnostics.run(
+            token=token,
+            channel_ids=settings.discord_channel_ids,
+            record_all_channels=settings.record_all_channels,
+        )
+        result["state"] = self.state
+        result["last_error"] = self.last_error
+        return result
+
+    async def start_recording_session(self, *, notes: str = "", source: str = "manual") -> RecordingSession:
+        if self.active_session and not self.active_session.stopped_at:
+            return self.active_session
+
+        settings = await self.store.get_settings(mask_token=False)
+        session = RecordingSession(
+            session_id=f"session-{uuid4().hex[:12]}",
+            channel_ids=["*"] if settings.record_all_channels else list(settings.discord_channel_ids),
+            source=source,
+            notes=notes,
+        )
+        self.active_session = session
+        await self.store.insert_session(session)
+        return session
+
+    async def stop_recording_session(self) -> RecordingSession | None:
+        if not self.active_session:
+            return None
+        session = self.active_session.model_copy(update={"stopped_at": utc_now_iso()})
+        self.active_session = None
+        await self.store.insert_session(session)
+        return session
 
     async def handle_message(self, message: Any, *, bot_user_id: str | None = None) -> str:
         author = getattr(message, "author", None)
@@ -78,8 +109,10 @@ class DiscordRecorder:
 
         guild = getattr(message, "guild", None)
         raw_text = build_discord_alert_text(message)
+        session_id = self.active_session.session_id if self.active_session else None
         record = DiscordMessageRecord(
             message_id=str(getattr(message, "id", "")),
+            session_id=session_id,
             channel_id=channel_id,
             channel_name=str(getattr(channel, "name", "")),
             guild_id=str(getattr(guild, "id", "")),
@@ -90,7 +123,7 @@ class DiscordRecorder:
             content=str(getattr(message, "content", "")),
             embeds=[_to_dict(embed) for embed in getattr(message, "embeds", []) or []],
             attachments=[_to_dict(item) for item in getattr(message, "attachments", []) or []],
-            raw_payload={},
+            raw_payload={"recording_session_id": session_id} if session_id else {},
         )
         await self.store.upsert_source(
             DiscordSource(
@@ -130,6 +163,7 @@ class DiscordRecorder:
         return RecorderStatus(
             discord_connected=self.state == "connected",
             discord_state=self.state,
+            active_session_id=self.active_session.session_id if self.active_session else None,
             monitored_channels=settings.discord_channel_ids if not settings.record_all_channels else ["*"],
             messages_recorded=len(messages),
             parsed_alerts=sum(1 for alert in alerts if alert.get("parse_status") == "parsed"),

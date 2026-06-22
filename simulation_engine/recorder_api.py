@@ -2,18 +2,23 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+import re
 import types
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import urlencode
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .alert_parser import parse_alert_text
 from .bot_event_bus import publish_event
 from .discord_recorder import DiscordRecorder
 from .market_recorder import parse_option_csv, parse_stock_csv
-from .recorder_models import RecorderSettings
+from .recorder_models import ExportRecord, RecorderSettings, normalize_channel_ids
 from .recording_store import RecordingStore
 
 
@@ -27,7 +32,32 @@ class CsvImportRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     channel_id: str | None = None
+    channel_ids: list[str] = Field(default_factory=list)
     created_at: str | None = None
+    export_type: Literal["alerts", "joined"] = "alerts"
+
+    @field_validator("channel_ids", mode="before")
+    @classmethod
+    def validate_channel_ids(cls, value: Any) -> list[str]:
+        return normalize_channel_ids(value)
+
+
+class RecordingSessionRequest(BaseModel):
+    notes: str = ""
+    source: str = "manual"
+
+
+class ConsolidationTestRunRequest(BaseModel):
+    name: str = Field(default="Consolidation replay test", min_length=1, max_length=120)
+    channel_id: str | None = None
+    channel_ids: list[str] = Field(default_factory=list)
+    since: str | None = None
+    limit: int = Field(default=1000, ge=1, le=10000)
+
+    @field_validator("channel_ids", mode="before")
+    @classmethod
+    def validate_channel_ids(cls, value: Any) -> list[str]:
+        return normalize_channel_ids(value)
 
 
 class IngestMessageRequest(BaseModel):
@@ -144,17 +174,40 @@ def create_recorder_router(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"inserted": await store.insert_market_bars(bars)}
 
+    @router.post("/recordings/sessions/start")
+    async def start_recording_session(body: RecordingSessionRequest):
+        session = await recorder.start_recording_session(notes=body.notes, source=body.source)
+        return {"active_session_id": session.session_id, "session": session, "status": "active"}
+
+    @router.post("/recordings/sessions/stop")
+    async def stop_recording_session():
+        session = await recorder.stop_recording_session()
+        return {
+            "active_session_id": recorder.active_session.session_id if recorder.active_session else None,
+            "session": session,
+            "status": "stopped" if session else "no_active_session",
+        }
+
+    @router.get("/recordings/sessions/active")
+    async def active_recording_session():
+        return {
+            "active_session_id": recorder.active_session.session_id if recorder.active_session else None,
+            "session": recorder.active_session,
+        }
+
     @router.get("/recordings/sessions")
     async def list_sessions(limit: int = 100):
         return {"sessions": await store.list_sessions(limit)}
 
     @router.get("/recordings/messages")
-    async def list_messages(limit: int = 100, channel_id: str | None = None):
-        return {"messages": await store.list_messages(limit, channel_id=channel_id)}
+    async def list_messages(limit: int = 100, channel_id: str | None = None, channel_ids: str | None = None):
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        return {"messages": await store.list_messages(limit, channel_ids=channels)}
 
     @router.get("/recordings/alerts")
-    async def list_alerts(limit: int = 100, channel_id: str | None = None):
-        return {"alerts": await store.list_alerts(limit, channel_id=channel_id)}
+    async def list_alerts(limit: int = 100, channel_id: str | None = None, channel_ids: str | None = None):
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        return {"alerts": await store.list_alerts(limit, channel_ids=channels)}
 
     @router.get("/recordings/market-bars")
     async def list_market_bars(limit: int = 100):
@@ -171,7 +224,13 @@ def create_recorder_router(
     @router.post("/recordings/export")
     async def export_recordings(body: ExportRequest):
         try:
-            return await store.export_alerts(export_root, channel_id=body.channel_id, created_at=body.created_at)
+            return await store.export_alerts(
+                export_root,
+                channel_id=body.channel_id,
+                channel_ids=body.channel_ids,
+                created_at=body.created_at,
+                export_type=body.export_type,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -180,22 +239,47 @@ def create_recorder_router(
         return {"exports": await store.list_exports(limit)}
 
     @router.get("/replay/events")
-    async def replay_events(limit: int = 1000, channel_id: str | None = None):
-        return {"events": await _replay_events(store, limit=limit, channel_id=channel_id)}
+    async def replay_events(limit: int = 1000, channel_id: str | None = None, channel_ids: str | None = None):
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        return {"events": await _replay_events(store, limit=limit, channel_ids=channels)}
+
+    @router.get("/consolidation/replay/events")
+    async def consolidation_replay_events(
+        limit: int = 1000,
+        channel_id: str | None = None,
+        channel_ids: str | None = None,
+        since: str | None = None,
+    ):
+        channels = normalize_channel_ids([channel_id, channel_ids])
+        return await _consolidation_replay_response(store, limit=limit, channel_ids=channels, since=since)
+
+    @router.post("/consolidation/test-runs")
+    async def create_consolidation_test_run(body: ConsolidationTestRunRequest):
+        channels = normalize_channel_ids([body.channel_id, body.channel_ids])
+        replay = await _consolidation_replay_response(store, limit=body.limit, channel_ids=channels, since=body.since)
+        return await _write_consolidation_test_run(
+            store,
+            export_root=export_root,
+            name=body.name,
+            channel_ids=channels,
+            since=body.since,
+            replay=replay,
+        )
 
     return router
 
 
-async def _replay_events(store: RecordingStore, *, limit: int, channel_id: str | None) -> list[dict[str, Any]]:
-    messages = await store.list_messages(limit=limit, channel_id=channel_id)
+async def _replay_events(store: RecordingStore, *, limit: int, channel_ids: list[str]) -> list[dict[str, Any]]:
+    channel_filter = set(channel_ids)
+    messages = await store.list_messages(limit=limit, channel_ids=channel_ids)
     message_by_id = {message["message_id"]: message for message in messages}
-    alerts = await store.list_alerts(limit=limit, channel_id=channel_id)
+    alerts = await store.list_alerts(limit=limit, channel_ids=channel_ids)
     snapshots = await store.list_market_snapshots(limit=limit)
 
     events: list[dict[str, Any]] = []
     for alert in alerts:
         message = message_by_id.get(alert["message_id"], {})
-        if channel_id and message.get("channel_id") != channel_id:
+        if channel_filter and message.get("channel_id") not in channel_filter:
             continue
         events.append(
             {
@@ -208,9 +292,9 @@ async def _replay_events(store: RecordingStore, *, limit: int, channel_id: str |
 
     for snapshot in snapshots:
         message = message_by_id.get(snapshot["alert_id"], {})
-        if channel_id and message.get("channel_id") != channel_id:
+        if channel_filter and message.get("channel_id") not in channel_filter:
             continue
-        if not message and channel_id:
+        if not message and channel_filter:
             continue
         events.append(
             {
@@ -225,6 +309,96 @@ async def _replay_events(store: RecordingStore, *, limit: int, channel_id: str |
     return events[:limit]
 
 
+async def _consolidation_replay_response(
+    store: RecordingStore,
+    *,
+    limit: int,
+    channel_ids: list[str],
+    since: str | None,
+) -> dict[str, Any]:
+    records = await store.joined_alert_records(channel_ids=channel_ids, limit=limit, since=since)
+    events = []
+    for record in records:
+        message = record["message"]
+        event_id = f"discord_alert:{message.get('message_id', '')}"
+        events.append(
+            {
+                "event_id": event_id,
+                "type": "discord_alert",
+                "timestamp": record["timestamp"],
+                "channel_id": record["channel_id"],
+                "payload": {
+                    "message": message,
+                    "alert": record["alert"],
+                    "market_snapshot": record.get("market_snapshot"),
+                    "price_drift": record.get("price_drift"),
+                },
+            }
+        )
+
+    next_cursor = events[-1]["timestamp"] if len(events) == limit and events else None
+    return {
+        "contract_version": "simulation.consolidation.replay.v1",
+        "event_count": len(events),
+        "filters": {"channel_id": channel_ids[0] if len(channel_ids) == 1 else None, "channel_ids": channel_ids, "since": since, "limit": limit},
+        "next_cursor": next_cursor,
+        "events": events,
+    }
+
+
+async def _write_consolidation_test_run(
+    store: RecordingStore,
+    *,
+    export_root: str | Path,
+    name: str,
+    channel_ids: list[str],
+    since: str | None,
+    replay: dict[str, Any],
+) -> dict[str, Any]:
+    created_at = datetime.now(timezone.utc)
+    run_id = f"consolidation-run-{uuid4().hex[:12]}"
+    folder = Path(export_root) / created_at.strftime("%Y-%m-%d") / "consolidation-test-runs"
+    folder.mkdir(parents=True, exist_ok=True)
+    file_path = folder / f"{created_at.strftime('%Y%m%d-%H%M%S')}-{_safe_slug(name)}-{run_id}.jsonl"
+    with file_path.open("w", encoding="utf-8") as handle:
+        for event in replay["events"]:
+            handle.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
+
+    export = ExportRecord(
+        export_id=run_id,
+        created_at=created_at.isoformat(),
+        channel_id="-".join(channel_ids) if channel_ids else "all",
+        channel_name="consolidation-test-run",
+        format="jsonl",
+        file_path=str(file_path),
+        row_count=int(replay["event_count"]),
+        filters={"channel_id": channel_ids[0] if len(channel_ids) == 1 else None, "channel_ids": channel_ids, "since": since, "contract_version": replay["contract_version"]},
+    )
+    await store.insert_export_record(export)
+
+    query: dict[str, str] = {}
+    if channel_ids:
+        query["channel_ids"] = ",".join(channel_ids)
+    if since:
+        query["since"] = since
+    replay_url = "/api/consolidation/replay/events"
+    if query:
+        replay_url = f"{replay_url}?{urlencode(query)}"
+
+    return {
+        "contract_version": "simulation.consolidation.test_run.v1",
+        "run_id": run_id,
+        "name": name,
+        "created_at": created_at.isoformat(),
+        "execution_mode": "recorded_replay_only",
+        "replay_contract_version": replay["contract_version"],
+        "event_count": replay["event_count"],
+        "file_path": str(file_path),
+        "replay_url": replay_url,
+        "filters": {"channel_id": channel_ids[0] if len(channel_ids) == 1 else None, "channel_ids": channel_ids, "since": since},
+    }
+
+
 def _fake_message(body: IngestMessageRequest) -> Any:
     return types.SimpleNamespace(
         id=body.message_id,
@@ -236,3 +410,8 @@ def _fake_message(body: IngestMessageRequest) -> Any:
         channel=types.SimpleNamespace(id=body.channel_id, name=body.channel_name),
         guild=types.SimpleNamespace(id=body.guild_id, name=body.guild_name),
     )
+
+
+def _safe_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
+    return slug or "test-run"

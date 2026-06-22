@@ -52,6 +52,30 @@ def normalize_contract_key(underlying: str, expiration: str, strike: float, opti
     return f"{clean_underlying}|{clean_expiration}|{strike_text}|{clean_type}"
 
 
+def normalize_channel_ids(value: Any) -> list[str]:
+    ids: list[str] = []
+
+    def collect(item: Any) -> None:
+        if item is None:
+            return
+        if isinstance(item, str):
+            for part in re.split(r"[\s,;]+", item):
+                clean = part.strip()
+                if clean and clean not in ids:
+                    ids.append(clean)
+            return
+        if isinstance(item, (list, tuple, set)):
+            for nested in item:
+                collect(nested)
+            return
+        clean = str(item).strip()
+        if clean and clean not in ids:
+            ids.append(clean)
+
+    collect(value)
+    return ids
+
+
 class RecorderSettings(BaseModel):
     discord_token: str = ""
     discord_channel_ids: list[str] = Field(default_factory=list)
@@ -59,6 +83,11 @@ class RecorderSettings(BaseModel):
     drift_percent_threshold: float = Field(default=10.0, ge=0.0)
     yfinance_enabled: bool = False
     record_all_channels: bool = False
+
+    @field_validator("discord_channel_ids", mode="before")
+    @classmethod
+    def validate_channel_ids(cls, value: Any) -> list[str]:
+        return normalize_channel_ids(value)
 
     def masked(self) -> "RecorderSettings":
         data = self.model_dump()
@@ -80,6 +109,7 @@ class DiscordSource(BaseModel):
 
 class DiscordMessageRecord(BaseModel):
     message_id: str
+    session_id: str | None = None
     channel_id: str
     channel_name: str = ""
     guild_id: str = ""
@@ -187,6 +217,11 @@ class RecordingSession(BaseModel):
     source: str = "manual"
     notes: str = ""
 
+    @field_validator("channel_ids", mode="before")
+    @classmethod
+    def validate_channel_ids(cls, value: Any) -> list[str]:
+        return normalize_channel_ids(value)
+
 
 class ExportRecord(BaseModel):
     export_id: str
@@ -202,6 +237,7 @@ class ExportRecord(BaseModel):
 class RecorderStatus(BaseModel):
     discord_connected: bool = False
     discord_state: str = "stopped"
+    active_session_id: str | None = None
     monitored_channels: list[str] = Field(default_factory=list)
     messages_recorded: int = 0
     parsed_alerts: int = 0
