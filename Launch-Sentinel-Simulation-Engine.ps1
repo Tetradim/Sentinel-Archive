@@ -25,6 +25,12 @@ $BrowserProcessIds = @()
 $BrowserWindowProcessIds = @()
 $BrowserStartedAt = $null
 $BrowserMonitorDisabled = $false
+$VcRedistUrl = "https://aka.ms/vc14/vc_redist.x64.exe"
+$DependencyRoot = if ($env:LOCALAPPDATA) {
+    Join-Path $env:LOCALAPPDATA "Sentinel Simulation Engine\dependencies"
+} else {
+    Join-Path $ProjectRoot ".dependencies"
+}
 
 function Write-Status {
     param([string]$Message, [string]$Level = "INFO")
@@ -204,6 +210,59 @@ function Wait-SimulationEngine {
     return $false
 }
 
+function Test-VcRuntimeInstalled {
+    $keys = @(
+        "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+    )
+
+    foreach ($key in $keys) {
+        try {
+            $runtime = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+            if ($runtime -and $runtime.Installed -eq 1) { return $true }
+        } catch {
+        }
+    }
+    return $false
+}
+
+function Invoke-DependencyDownload {
+    param(
+        [string]$Url,
+        [string]$OutFile,
+        [string]$Label
+    )
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $OutFile) -Force | Out-Null
+    if (Test-Path -LiteralPath $OutFile) {
+        Write-Status "$Label already downloaded"
+        return $OutFile
+    }
+
+    Write-Status "Downloading $Label"
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    } catch {
+    }
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec 180
+    return $OutFile
+}
+
+function Ensure-InstalledRuntimeDependencies {
+    if (Test-VcRuntimeInstalled) {
+        Write-Status "Microsoft Visual C++ Runtime is installed" "OK"
+        return
+    }
+
+    Write-Status "Microsoft Visual C++ Runtime was not found; installing it automatically" "WARN"
+    $installer = Join-Path $DependencyRoot "vc_redist.x64.exe"
+    Invoke-DependencyDownload -Url $VcRedistUrl -OutFile $installer -Label "Microsoft Visual C++ Runtime" | Out-Null
+    $process = Start-Process -FilePath $installer -ArgumentList "/install", "/quiet", "/norestart" -Wait -PassThru
+    if (-not (@(0, 3010, 1638) -contains $process.ExitCode)) {
+        Write-Status "Microsoft Visual C++ Runtime installer exited with code $($process.ExitCode). Sentinel Simulation Engine will continue and report any startup error." "WARN"
+    }
+}
+
 function Find-CommandPath {
     param([string[]]$Names)
     foreach ($name in $Names) {
@@ -241,6 +300,30 @@ function Stop-PortOwnerProcess {
         Write-Status "Replacing existing process $owner on port $Port" "WARN"
         Stop-Process -Id $owner -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Start-InstalledSimulationEngine {
+    param(
+        [string]$InstalledExe,
+        [int]$PortToUse
+    )
+
+    Ensure-InstalledRuntimeDependencies
+    if (Test-PortOpen -Port $PortToUse) {
+        Stop-PortOwnerProcess -Port $PortToUse
+        Start-Sleep -Seconds 1
+    }
+
+    $env:HOST = "127.0.0.1"
+    $env:PORT = "$PortToUse"
+    New-Item -ItemType Directory -Path (Join-Path $ProjectRoot "data") -Force | Out-Null
+
+    Write-Status "Starting packaged SentinelSimulationEngine.exe on port $PortToUse"
+    $script:ServerProcess = Start-Process -FilePath $InstalledExe -WorkingDirectory $ProjectRoot -PassThru -WindowStyle Hidden
+    if (-not (Wait-SimulationEngine -Port $PortToUse)) {
+        throw "Simulation Engine did not become ready on port $PortToUse."
+    }
+    Write-Status "Simulation Engine is ready" "OK"
 }
 
 function Start-LauncherWatchdog {
@@ -403,6 +486,10 @@ if ($SmokeTest) {
     exit 0
 }
 
+function Start-SourceSimulationEngine {
+    Write-Status "Starting Sentinel Simulation Engine - Local Source"
+}
+
 try {
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
@@ -411,6 +498,38 @@ try {
     Write-Host ""
     Write-Status "Project root: $ProjectRoot"
     Write-Status "Launcher log: $LogFile"
+
+    $installedExe = Join-Path $ProjectRoot "SentinelSimulationEngine.exe"
+    $installedUi = Join-Path $ProjectRoot "dist\index.html"
+    if ((Test-Path -LiteralPath $installedExe) -and (Test-Path -LiteralPath $installedUi)) {
+        Write-Host "  Sentinel Simulation Engine - Installed App" -ForegroundColor Cyan
+        Start-InstalledSimulationEngine -InstalledExe $installedExe -PortToUse $Port
+
+        $url = "http://127.0.0.1:$Port"
+        if (-not $NoBrowser) {
+            $BrowserProcess = Start-DedicatedBrowserWindow -Url $url
+        }
+        Start-LauncherWatchdog -ServerProcessId $ServerProcess.Id -BrowserProfileDir $BrowserProfileDir
+
+        Write-Host ""
+        Write-Host "Ready: $url" -ForegroundColor Green
+        Write-Host "Press Ctrl+C or close this window to stop the engine." -ForegroundColor Gray
+        Write-Host ""
+
+        while ($true) {
+            if ($ServerProcess.HasExited) {
+                throw "Simulation Engine exited unexpectedly with code $($ServerProcess.ExitCode)."
+            }
+            if (Test-BrowserWindowClosed) {
+                Write-Status "Browser window closed; shutting down Simulation Engine" "OK"
+                break
+            }
+            Start-Sleep -Seconds 1
+        }
+        exit 0
+    }
+
+    Start-SourceSimulationEngine
 
     $python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
     if (-not (Test-Path $python)) {

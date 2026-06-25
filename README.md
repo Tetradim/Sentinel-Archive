@@ -90,6 +90,21 @@ Open:
 http://127.0.0.1:9200
 ```
 
+## Windows Beta Installer
+
+For non-technical beta testers, download and run `SentinelSimulationEngine-Setup-<version>.exe` from the Windows release artifact.
+
+After installation, double-click **Sentinel Simulation Engine** from the Desktop or Start Menu. The installed launcher downloads missing runtime dependencies on first launch, including the Microsoft Visual C++ Runtime when Windows does not already have it. The installed beta build runs the packaged FastAPI app and serves the bundled control panel from the same local port.
+
+Installed beta testers do not need to install Python, Node.js, npm, or Vite. If startup fails, send a screenshot of the launcher window and the Desktop log file named `Sentinel-Simulation-Engine.log`.
+
+Default installed URLs:
+
+| Service | URL |
+| --- | --- |
+| Control panel | `http://127.0.0.1:9200` |
+| Health check | `http://127.0.0.1:9200/api/health` |
+
 ## Windows Launcher
 
 ```powershell
