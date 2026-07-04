@@ -61,14 +61,48 @@ class BacktestStore:
         return record
 
     async def list_runs(self, limit: int = 100) -> list[BacktestRunRecord]:
+        records, _total = await self.list_runs_page(limit=limit, offset=0)
+        return records
+
+    async def list_runs_page(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        asset_class: str | None = None,
+        symbol: str | None = None,
+        kind: str | None = None,
+        created_at_from: str | None = None,
+        created_at_to: str | None = None,
+        safety_score_min: float | None = None,
+        safety_score_max: float | None = None,
+    ) -> tuple[list[BacktestRunRecord], int]:
         await self._ensure_initialized()
         async with self._connect() as conn:
-            async with conn.execute(
-                "SELECT data FROM archive_backtest_runs ORDER BY created_at DESC LIMIT ?",
-                (int(limit),),
-            ) as cur:
+            async with conn.execute("SELECT data FROM archive_backtest_runs ORDER BY created_at DESC") as cur:
                 rows = await cur.fetchall()
-        return [BacktestRunRecord(**json.loads(row["data"])) for row in rows]
+
+        records = [BacktestRunRecord(**json.loads(row["data"])) for row in rows]
+        if asset_class:
+            records = [record for record in records if record.asset_class == asset_class]
+        if symbol:
+            normalized_symbol = symbol.upper()
+            records = [record for record in records if record.symbol.upper() == normalized_symbol]
+        if kind:
+            records = [record for record in records if record.kind == kind]
+        if created_at_from:
+            records = [record for record in records if record.created_at >= created_at_from]
+        if created_at_to:
+            records = [record for record in records if record.created_at <= created_at_to]
+        if safety_score_min is not None:
+            records = [record for record in records if record.report.metrics.safety_score >= safety_score_min]
+        if safety_score_max is not None:
+            records = [record for record in records if record.report.metrics.safety_score <= safety_score_max]
+
+        total = len(records)
+        start = max(0, int(offset))
+        end = start + max(1, int(limit))
+        return records[start:end], total
 
     async def get_run(self, run_id: str) -> BacktestRunRecord | None:
         await self._ensure_initialized()

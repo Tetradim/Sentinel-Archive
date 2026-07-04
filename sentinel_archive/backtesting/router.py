@@ -78,9 +78,35 @@ def create_backtest_router(store: BacktestStore) -> APIRouter:
         return record.model_dump(mode="json")
 
     @router.get("/runs")
-    async def list_runs(limit: int = 100):
-        records = await store.list_runs(limit=limit)
-        return {"runs": [record.model_dump(mode="json") for record in records]}
+    async def list_runs(
+        limit: int = 100,
+        offset: int = 0,
+        asset_class: str | None = None,
+        symbol: str | None = None,
+        kind: str | None = None,
+        created_at_from: str | None = None,
+        created_at_to: str | None = None,
+        safety_score_min: float | None = None,
+        safety_score_max: float | None = None,
+    ):
+        records, total = await store.list_runs_page(
+            limit=limit,
+            offset=offset,
+            asset_class=asset_class,
+            symbol=symbol,
+            kind=kind,
+            created_at_from=created_at_from,
+            created_at_to=created_at_to,
+            safety_score_min=safety_score_min,
+            safety_score_max=safety_score_max,
+        )
+        return {
+            "runs": [record.model_dump(mode="json") for record in records],
+            "limit": limit,
+            "offset": offset,
+            "total": total,
+            "has_more": offset + len(records) < total,
+        }
 
     @router.get("/runs/{run_id}")
     async def get_run(run_id: str):

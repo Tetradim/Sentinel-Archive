@@ -179,6 +179,229 @@ export type SentinelEchoTestRun = {
   filters: Record<string, unknown>;
 };
 
+export type AssetClass = 'crypto' | 'stock' | 'options' | 'darkpool' | 'futures_risk';
+export type TradeSide = 'long' | 'short';
+export type BacktestRunKind = 'run' | 'sweep' | 'walk_forward' | 'stress';
+export type OptionAction = 'buy' | 'sell' | 'exit';
+
+export type MarketPriceBar = {
+  timestamp: string;
+  symbol: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+};
+
+export type OptionAlert = {
+  timestamp: string;
+  contract_key: string;
+  action: OptionAction;
+  quantity?: number;
+  alert_price?: number | null;
+  fill_price?: number | null;
+};
+
+export type OptionQuote = {
+  timestamp: string;
+  contract_key: string;
+  bid?: number | null;
+  ask?: number | null;
+  mid?: number | null;
+  last?: number | null;
+};
+
+export type BacktestCostModel = {
+  fee_bps: number;
+  slippage_bps: number;
+  funding_bps_per_step: number;
+  commission_per_trade: number;
+  option_fill_price: 'mid' | 'last' | 'bid' | 'ask';
+  option_multiplier: number;
+};
+
+export type BacktestRunRequest = {
+  asset_class: AssetClass;
+  symbol: string;
+  side: TradeSide;
+  quantity: number;
+  starting_equity: number;
+  leverage: number;
+  stop_loss_pct?: number | null;
+  take_profit_pct?: number | null;
+  trailing_stop_pct?: number | null;
+  close_final_position: boolean;
+  cost_model: BacktestCostModel;
+  bars: MarketPriceBar[];
+  option_alerts: OptionAlert[];
+  option_quotes: OptionQuote[];
+  metadata?: Record<string, unknown>;
+};
+
+export type BacktestTrade = {
+  symbol: string;
+  side: TradeSide;
+  quantity: number;
+  entry_time: string;
+  entry_price: number;
+  exit_time: string;
+  exit_price: number;
+  pnl: number;
+  fees: number;
+  mae: number;
+  mfe: number;
+  exit_reason: string;
+};
+
+export type BacktestMetrics = {
+  starting_equity: number;
+  ending_equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  total_return_pct: number;
+  win_rate: number;
+  trade_count: number;
+  gross_profit: number;
+  gross_loss: number;
+  profit_factor: number;
+  max_drawdown_pct: number;
+  mae: number;
+  mfe: number;
+  average_win: number;
+  average_loss: number;
+  total_fees: number;
+  slippage: number;
+  funding: number;
+  safety_score: number;
+  safety_flags: string[];
+};
+
+export type BacktestReport = {
+  run_id?: string;
+  asset_class: AssetClass;
+  symbol: string;
+  metrics: BacktestMetrics;
+  trades: BacktestTrade[];
+  warnings: string[];
+  assumptions: Record<string, unknown>;
+};
+
+export type BacktestWalkForwardWindow = {
+  train_range: { start: string; end: string };
+  test_range: { start: string; end: string };
+  report: BacktestReport;
+};
+
+export type BacktestRunRecord = {
+  run_id: string;
+  created_at: string;
+  kind: BacktestRunKind;
+  asset_class: AssetClass;
+  symbol: string;
+  fingerprint: string;
+  request: Record<string, unknown>;
+  report: BacktestReport;
+  result: {
+    reports?: BacktestReport[];
+    windows?: BacktestWalkForwardWindow[];
+    [key: string]: unknown;
+  };
+};
+
+export type BacktestRunsResponse = {
+  runs: BacktestRunRecord[];
+  limit?: number;
+  offset?: number;
+  total?: number;
+  has_more?: boolean;
+};
+
+export type PresetCatalog = {
+  strategies: Array<Record<string, unknown>>;
+  brackets: Array<Record<string, unknown>>;
+  risk: Array<Record<string, unknown>>;
+  cost_models: Array<Record<string, unknown>>;
+  suite_profiles: Array<Record<string, unknown>>;
+};
+
+export type ArchiveDatasetRecord = {
+  dataset_id: string;
+  created_at: string;
+  name: string;
+  asset_class: AssetClass;
+  symbol: string;
+  fingerprint: string;
+  bars: MarketPriceBar[];
+  option_alerts: OptionAlert[];
+  option_quotes: OptionQuote[];
+  metadata: Record<string, unknown>;
+};
+
+export type ArchiveDatasetsResponse = {
+  datasets: ArchiveDatasetRecord[];
+  limit: number;
+  offset: number;
+  total: number;
+  has_more: boolean;
+};
+
+export type SuiteComputeBudget = {
+  max_jobs: number;
+  max_runtime_seconds?: number | null;
+  priority?: 'low' | 'normal' | 'high';
+};
+
+export type SuitePlanRequest = {
+  name: string;
+  profile?: string | null;
+  bots?: string[];
+  test_families?: string[];
+  assets?: string[];
+  timeframe?: string | null;
+  date_range?: Record<string, string>;
+  strategy_presets?: string[];
+  bracket_presets?: string[];
+  risk_presets?: string[];
+  cost_model?: Record<string, unknown>;
+  compute_budget?: SuiteComputeBudget;
+  schedule?: Record<string, unknown>;
+  change_triggers?: string[];
+  allow_live_execution?: boolean;
+  required_bots?: string[];
+};
+
+export type SuiteJob = {
+  job_id: string;
+  bot_id: string;
+  test_family: string;
+  status: 'planned' | 'skipped' | 'passed' | 'warning' | 'failed';
+  repo_path?: string | null;
+  assets: string[];
+  skipped_reason?: string | null;
+  evidence: Record<string, unknown>;
+};
+
+export type SuitePlan = {
+  plan_id: string;
+  created_at: string;
+  name: string;
+  profile?: string | null;
+  fingerprint: string;
+  jobs: SuiteJob[];
+  request: Record<string, unknown>;
+};
+
+export type SuiteRun = {
+  run_id: string;
+  plan_id: string;
+  created_at: string;
+  status: 'planned' | 'skipped' | 'passed' | 'warning' | 'failed';
+  fingerprint: string;
+  jobs: SuiteJob[];
+};
+
 function queryString(params: Record<string, string | number | null | undefined>) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -202,7 +425,8 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
       ...(options.headers || {}),
     },
   });
-  const payload = (await response.json()) as unknown;
+  const text = await response.text();
+  const payload = text ? (JSON.parse(text) as unknown) : null;
   if (!response.ok) {
     const message = payload && typeof payload === 'object' && 'detail' in payload ? String((payload as { detail: unknown }).detail) : `${response.status} ${response.statusText}`;
     throw new Error(message);
@@ -287,4 +511,42 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name, channel_ids: channelIds ?? [], since: since || null, limit }),
     }),
+  archivePresets: () => requestJson<PresetCatalog>('/api/archive/presets'),
+  archiveRuns: (filters: Record<string, string | number | null | undefined> = {}) => requestJson<BacktestRunsResponse>(`/api/archive/backtest/runs${queryString(filters)}`),
+  archiveRun: (runId: string) => requestJson<BacktestRunRecord>(`/api/archive/backtest/runs/${encodeURIComponent(runId)}`),
+  runArchiveBacktest: (request: BacktestRunRequest) =>
+    requestJson<BacktestRunRecord>('/api/archive/backtest/run', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  runArchiveSweep: (body: { base_request: BacktestRunRequest; stop_loss_pcts: Array<number | null>; take_profit_pcts: Array<number | null>; leverage_values: number[] }) =>
+    requestJson<BacktestRunRecord>('/api/archive/backtest/sweeps', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  runArchiveWalkForward: (body: { base_request: BacktestRunRequest; train_size: number; test_size: number; step_size: number }) =>
+    requestJson<BacktestRunRecord>('/api/archive/backtest/walk-forward', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  runArchiveStress: (body: { base_request: BacktestRunRequest; scenarios: Array<{ name: string; price_shock_pct: number; slippage_bps?: number | null }> }) =>
+    requestJson<BacktestRunRecord>('/api/archive/backtest/stress', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  archiveDatasets: (filters: Record<string, string | number | null | undefined> = {}) => requestJson<ArchiveDatasetsResponse>(`/api/archive/datasets${queryString(filters)}`),
+  createArchiveDataset: (body: { name: string; asset_class: AssetClass; symbol: string; bars: MarketPriceBar[]; option_alerts: OptionAlert[]; option_quotes: OptionQuote[]; metadata?: Record<string, unknown> }) =>
+    requestJson<ArchiveDatasetRecord>('/api/archive/datasets', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  suitePlans: (limit = 100) => requestJson<{ plans: SuitePlan[] }>(`/api/archive/bot-suite/plans${queryString({ limit })}`),
+  createSuitePlan: (request: SuitePlanRequest) =>
+    requestJson<SuitePlan>('/api/archive/bot-suite/plans', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  suiteRuns: (limit = 100) => requestJson<{ runs: SuiteRun[] }>(`/api/archive/bot-suite/runs${queryString({ limit })}`),
+  runSuitePlan: (planId: string) => requestJson<SuiteRun>(`/api/archive/bot-suite/plans/${encodeURIComponent(planId)}/run`, { method: 'POST', body: '{}' }),
+  suiteRun: (runId: string) => requestJson<SuiteRun>(`/api/archive/bot-suite/runs/${encodeURIComponent(runId)}`),
 };

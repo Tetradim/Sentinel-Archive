@@ -477,6 +477,37 @@ def run_alpaca_paper_order_drill(
             ),
         ]
 
+    if not allow_orders:
+        return [
+            _check(
+                "alpaca_account_preflight",
+                "blocked",
+                "Alpaca account preflight is skipped until the explicit allow_orders flag is set.",
+                evidence={"key_present": True, "secret_present": True, "paper_flag": True, "allow_orders": False},
+                requires_human=True,
+            ),
+            _check(
+                "alpaca_paper_order_cancel",
+                "blocked",
+                "Explicit allow_orders flag is required before submitting even paper orders.",
+                evidence={"allow_orders": False},
+                requires_human=True,
+            ),
+            _check(
+                "alpaca_controlled_rejection",
+                "blocked",
+                "Explicit allow_orders flag is required before submitting controlled paper rejection orders.",
+                evidence={"allow_orders": False},
+                requires_human=True,
+            ),
+            _check(
+                "alpaca_partial_fill_drill",
+                "blocked",
+                "Partial fills cannot be forced deterministically through Alpaca paper REST.",
+                requires_human=True,
+            ),
+        ]
+
     base_url, prefix = _alpaca_base_and_prefix(credentials["endpoint"])
     headers = {
         "APCA-API-KEY-ID": credentials["key"],
@@ -535,32 +566,6 @@ def run_alpaca_paper_order_drill(
             )
         )
 
-        if not allow_orders:
-            checks.extend(
-                [
-                    _check(
-                        "alpaca_paper_order_cancel",
-                        "blocked",
-                        "Explicit allow_orders flag is required before submitting even paper orders.",
-                        evidence={"allow_orders": False},
-                        requires_human=True,
-                    ),
-                    _check(
-                        "alpaca_controlled_rejection",
-                        "blocked",
-                        "Explicit allow_orders flag is required before submitting controlled paper rejection orders.",
-                        evidence={"allow_orders": False},
-                        requires_human=True,
-                    ),
-                    _check(
-                        "alpaca_partial_fill_drill",
-                        "blocked",
-                        "Partial fills cannot be forced deterministically through Alpaca paper REST.",
-                        requires_human=True,
-                    ),
-                ]
-            )
-            return checks
 
         if buying_power < 0.05:
             checks.append(
