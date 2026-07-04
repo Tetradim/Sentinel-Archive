@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 TradeSide = Literal["long", "short"]
 AssetClass = Literal["crypto", "stock", "options", "darkpool", "futures_risk"]
 OptionAction = Literal["buy", "sell", "exit"]
+BacktestRunKind = Literal["run", "sweep", "walk_forward", "stress"]
 
 
 class MarketPriceBar(BaseModel):
@@ -112,3 +113,62 @@ class BacktestReport(BaseModel):
     trades: list[BacktestTrade] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     assumptions: dict[str, Any] = Field(default_factory=dict)
+
+
+class BacktestRunRecord(BaseModel):
+    run_id: str
+    created_at: str
+    kind: BacktestRunKind
+    asset_class: AssetClass
+    symbol: str
+    fingerprint: str
+    request: dict[str, Any] = Field(default_factory=dict)
+    report: BacktestReport
+
+
+class BacktestSweepRequest(BaseModel):
+    base_request: BacktestRunRequest
+    stop_loss_pcts: list[float | None] = Field(default_factory=list)
+    take_profit_pcts: list[float | None] = Field(default_factory=list)
+    leverage_values: list[float] = Field(default_factory=list)
+
+
+class BacktestSweepResult(BaseModel):
+    reports: list[BacktestReport]
+
+
+class BacktestRange(BaseModel):
+    start: str
+    end: str
+
+
+class BacktestWalkForwardRequest(BaseModel):
+    base_request: BacktestRunRequest
+    train_size: int = Field(gt=0)
+    test_size: int = Field(gt=0)
+    step_size: int = Field(gt=0)
+
+
+class BacktestWalkForwardWindow(BaseModel):
+    train_range: BacktestRange
+    test_range: BacktestRange
+    report: BacktestReport
+
+
+class BacktestWalkForwardResult(BaseModel):
+    windows: list[BacktestWalkForwardWindow]
+
+
+class BacktestStressScenario(BaseModel):
+    name: str
+    price_shock_pct: float = 0.0
+    slippage_bps: float | None = Field(default=None, ge=0)
+
+
+class BacktestStressRequest(BaseModel):
+    base_request: BacktestRunRequest
+    scenarios: list[BacktestStressScenario] = Field(default_factory=list)
+
+
+class BacktestStressResult(BaseModel):
+    reports: list[BacktestReport]
