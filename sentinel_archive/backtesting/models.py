@@ -124,6 +124,7 @@ class BacktestRunRecord(BaseModel):
     fingerprint: str
     request: dict[str, Any] = Field(default_factory=dict)
     report: BacktestReport
+    result: dict[str, Any] = Field(default_factory=dict)
 
 
 class BacktestSweepRequest(BaseModel):

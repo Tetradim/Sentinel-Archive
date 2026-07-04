@@ -11,6 +11,7 @@ from sentinel_archive.backtesting.engines.options import run_options_replay
 from sentinel_archive.backtesting.engines.stocks import run_stock_backtest
 from sentinel_archive.backtesting.models import (
     BacktestReport,
+    BacktestRunKind,
     BacktestRunRecord,
     BacktestRunRequest,
     BacktestStressRequest,
@@ -101,20 +102,39 @@ def run_stress(request: BacktestStressRequest) -> BacktestStressResult:
 
 
 def create_run_record(request: BacktestRunRequest, report: BacktestReport, *, kind: str = "run") -> BacktestRunRecord:
+    return create_result_record(
+        kind=kind,  # type: ignore[arg-type]
+        asset_class=request.asset_class,
+        symbol=request.symbol,
+        request_payload=request.model_dump(mode="json"),
+        report=report,
+        result_payload=report.model_dump(mode="json"),
+    )
+
+
+def create_result_record(
+    *,
+    kind: BacktestRunKind,
+    asset_class: str,
+    symbol: str,
+    request_payload: dict,
+    report: BacktestReport,
+    result_payload: dict,
+) -> BacktestRunRecord:
     created_at = datetime.now(timezone.utc).isoformat()
-    payload = request.model_dump(mode="json")
-    fingerprint = fingerprint_payload({"kind": kind, "request": payload})
+    fingerprint = fingerprint_payload({"kind": kind, "request": request_payload})
     run_id = f"bt-{fingerprint[:8]}-{uuid4().hex[:8]}"
     report.run_id = run_id
     return BacktestRunRecord(
         run_id=run_id,
         created_at=created_at,
-        kind=kind,  # type: ignore[arg-type]
-        asset_class=request.asset_class,
-        symbol=request.symbol.upper(),
+        kind=kind,
+        asset_class=asset_class,  # type: ignore[arg-type]
+        symbol=symbol.upper(),
         fingerprint=fingerprint,
-        request=payload,
+        request=request_payload,
         report=report,
+        result=result_payload,
     )
 
 
