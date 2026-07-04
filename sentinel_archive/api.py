@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .contracts import pulse_handoff_contract_document
+from .backtesting.router import create_backtest_router
+from .backtesting.store import BacktestStore
 from .bot_event_bus_api import create_bot_event_bus_router
 from .chrome_bridge_api import create_chrome_bridge_router
 from .core import SentinelArchive
@@ -56,6 +58,7 @@ def create_app(
 ) -> FastAPI:
     engine_instance = engine or SentinelArchive()
     recorder_store = RecordingStore(recorder_db_path)
+    backtest_store = BacktestStore(recorder_db_path)
     discord_recorder = DiscordRecorder(recorder_store)
 
     async def playback_loop() -> None:
@@ -70,6 +73,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app_instance: FastAPI):
         await recorder_store.initialize()
+        await backtest_store.initialize()
         app_instance.state.playback_task = asyncio.create_task(playback_loop())
         try:
             yield
@@ -86,6 +90,7 @@ def create_app(
     app = FastAPI(title="Sentinel Archive", version="0.1.0", lifespan=lifespan)
     app.state.engine = engine_instance
     app.state.recorder_store = recorder_store
+    app.state.backtest_store = backtest_store
     app.state.discord_recorder = discord_recorder
     app.state.playback_task = None
     app.add_middleware(
@@ -95,6 +100,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(create_recorder_router(recorder_store, discord_recorder, export_root=recorder_export_root), prefix="/api")
+    app.include_router(create_backtest_router(backtest_store), prefix="/api")
     app.include_router(create_bot_event_bus_router(), prefix="/api")
     app.include_router(create_chrome_bridge_router(recorder_store, discord_recorder), prefix="/api")
 
