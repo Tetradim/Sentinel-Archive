@@ -698,10 +698,6 @@ export function App() {
             </button>
           ))}
         </nav>
-        <section className="rail-card">
-          <div className="feed-state"><span className="pulse-dot" /><b>Paper-first</b></div>
-          <p>No broker route or live execution control is exposed in this UI.</p>
-        </section>
         <section className="rail-card mini-help">
           <div className="rail-card-title">Engine labels</div>
           <p>Stock: long-only. Options: alert replay. Crypto: simplified liquidation check.</p>
