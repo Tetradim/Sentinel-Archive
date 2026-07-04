@@ -698,10 +698,6 @@ export function App() {
             </button>
           ))}
         </nav>
-        <section className="rail-card mini-help">
-          <div className="rail-card-title">Engine labels</div>
-          <p>Stock: long-only. Options: alert replay. Crypto: simplified liquidation check.</p>
-        </section>
       </aside>
 
       <section className="main-shell">
