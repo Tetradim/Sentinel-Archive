@@ -45,3 +45,22 @@ def test_live_execution_is_rejected():
                 allow_live_execution=True,
             )
         )
+
+
+def test_repeated_suite_runs_keep_history_with_same_fingerprint():
+    from sentinel_archive.bot_suite.models import SuitePlanRequest
+    from sentinel_archive.bot_suite.planner import build_suite_plan, build_suite_run
+
+    plan = build_suite_plan(
+        SuitePlanRequest(
+            name="focused crypto",
+            bots=["chain"],
+            test_families=["crypto_backtest"],
+        )
+    )
+
+    first = build_suite_run(plan)
+    second = build_suite_run(plan)
+
+    assert first.fingerprint == second.fingerprint
+    assert first.run_id != second.run_id

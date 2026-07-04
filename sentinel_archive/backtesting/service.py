@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from itertools import product
+from uuid import uuid4
 
 from sentinel_archive.backtesting.engines.crypto import run_crypto_backtest
 from sentinel_archive.backtesting.engines.options import run_options_replay
@@ -103,7 +104,7 @@ def create_run_record(request: BacktestRunRequest, report: BacktestReport, *, ki
     created_at = datetime.now(timezone.utc).isoformat()
     payload = request.model_dump(mode="json")
     fingerprint = fingerprint_payload({"kind": kind, "request": payload})
-    run_id = f"bt-{fingerprint[:12]}"
+    run_id = f"bt-{fingerprint[:8]}-{uuid4().hex[:8]}"
     report.run_id = run_id
     return BacktestRunRecord(
         run_id=run_id,

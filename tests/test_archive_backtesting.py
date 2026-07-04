@@ -248,3 +248,31 @@ def test_backtest_exports_include_json_and_csv_rows():
 
     assert report_to_json(report)["symbol"] == "SPY"
     assert "entry_price" in report_to_csv(report)
+
+
+def test_repeated_backtest_records_keep_history_with_same_fingerprint():
+    from sentinel_archive.backtesting.engines.stocks import run_stock_backtest
+    from sentinel_archive.backtesting.models import BacktestRunRequest, MarketPriceBar
+    from sentinel_archive.backtesting.service import create_run_record
+
+    request = BacktestRunRequest(
+        asset_class="stock",
+        symbol="SPY",
+        quantity=1,
+        bars=[
+            MarketPriceBar(
+                timestamp="2026-07-01T13:30:00Z",
+                symbol="SPY",
+                open=100,
+                high=103,
+                low=99,
+                close=102,
+            )
+        ],
+    )
+
+    first = create_run_record(request, run_stock_backtest(request))
+    second = create_run_record(request, run_stock_backtest(request))
+
+    assert first.fingerprint == second.fingerprint
+    assert first.run_id != second.run_id

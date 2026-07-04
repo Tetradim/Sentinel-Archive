@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sentinel_archive.bot_suite.models import SuiteJob, SuitePlan, SuitePlanRequest, SuiteRun
 from sentinel_archive.bot_suite.registry import BOT_REGISTRY, FULL_REGRESSION_PROFILE
@@ -67,7 +68,7 @@ def build_suite_run(plan: SuitePlan) -> SuiteRun:
     status = "passed" if all(job.status in {"passed", "skipped"} for job in jobs) else "warning"
     fingerprint = fingerprint_payload({"plan_id": plan.plan_id, "jobs": [job.model_dump(mode="json") for job in jobs]})
     return SuiteRun(
-        run_id=f"suite-run-{fingerprint[:12]}",
+        run_id=f"suite-run-{fingerprint[:8]}-{uuid4().hex[:8]}",
         plan_id=plan.plan_id,
         created_at=datetime.now(timezone.utc).isoformat(),
         status=status,  # type: ignore[arg-type]
@@ -102,4 +103,3 @@ def _selected_families(request: SuitePlanRequest) -> list[tuple[str, tuple[str, 
             raise ValueError(f"unsupported test families for {bot_id}: {', '.join(unsupported)}")
         selected.append((bot_id, families))
     return selected
-
