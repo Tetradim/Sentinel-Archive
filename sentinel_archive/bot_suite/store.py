@@ -114,4 +114,3 @@ class BotSuiteStore:
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             yield conn
-

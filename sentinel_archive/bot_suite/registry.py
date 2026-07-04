@@ -64,4 +64,3 @@ BOT_REGISTRY: dict[str, BotDefinition] = {
 
 
 FULL_REGRESSION_PROFILE = "all-bots/full-regression"
-

@@ -61,4 +61,3 @@ class SuiteRun(BaseModel):
     status: SuiteJobStatus
     fingerprint: str
     jobs: list[SuiteJob]
-
