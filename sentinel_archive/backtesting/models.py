@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 TradeSide = Literal["long", "short"]
@@ -93,10 +93,15 @@ class FundingEvent(BaseModel):
     mark_price: float | None = Field(default=None, gt=0)
 
 
-OrderAction = Literal["open", "close", "cancel", "amend"]
+OrderAction = Literal["open", "close", "cancel", "amend", "target"]
 OrderType = Literal["market", "limit", "stop", "stop_limit", "trailing_stop"]
 TimeInForce = Literal["GTC", "IOC", "FOK", "DAY"]
 SameBarPolicy = Literal["adverse_first", "favorable_first", "open_high_low_close", "open_low_high_close", "reject_ambiguous"]
+
+
+class AttachedTakeProfit(BaseModel):
+    price: float = Field(gt=0)
+    close_fraction: float = Field(gt=0, le=1)
 
 
 class BacktestOrderIntent(BaseModel):
@@ -105,14 +110,32 @@ class BacktestOrderIntent(BaseModel):
     action: OrderAction = "open"
     side: TradeSide = "long"
     order_type: OrderType = "market"
-    quantity: float = Field(default=1.0, gt=0)
+    quantity: float = Field(default=1.0, ge=0)
     limit_price: float | None = Field(default=None, gt=0)
     stop_price: float | None = Field(default=None, gt=0)
     trailing_percent: float | None = Field(default=None, gt=0)
+    attached_stop_price: float | None = Field(default=None, gt=0)
+    attached_target_price: float | None = Field(default=None, gt=0)
+    attached_targets: list[AttachedTakeProfit] = Field(default_factory=list)
+    attached_trailing_percent: float | None = Field(default=None, gt=0)
+    attached_trailing_activation_price: float | None = Field(default=None, gt=0)
+    max_hold_bars: int | None = Field(default=None, ge=1)
+    leverage: float | None = Field(default=None, ge=1)
     reduce_only: bool = False
     oco_group: str | None = None
     time_in_force: TimeInForce = "IOC"
     metadata: dict[str, Any] = Field(default_factory=dict)
+    preflight_rejection_reason: str | None = None
+
+    @model_validator(mode="after")
+    def validate_quantity_for_action(self):
+        if self.action != "target" and self.quantity <= 0:
+            raise ValueError("quantity must be positive unless action is target")
+        if self.attached_target_price is not None and self.attached_targets:
+            raise ValueError("use attached_target_price or attached_targets, not both")
+        if sum(item.close_fraction for item in self.attached_targets) > 1 + 1e-12:
+            raise ValueError("attached target close fractions cannot exceed 1")
+        return self
 
 
 class DerivativesExecutionModel(BaseModel):

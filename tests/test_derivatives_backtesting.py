@@ -181,6 +181,146 @@ def test_gtc_limit_waits_for_a_later_bar_and_missing_price_is_rejected():
     assert rejected.executions[0].reason == "missing_limit_price"
 
 
+def test_target_orders_rebalance_flatten_and_reenter_after_a_stop():
+    report = run_derivatives_backtest(
+        _request(
+            bars=[
+                _bar(30, open_=5000, high=5001, low=5000, close=5001),
+                _bar(31, open_=5001, high=5002, low=4940, close=4950),
+                _bar(32, open_=4950, high=4960, low=4945, close=4955),
+                _bar(33, open_=4955, high=4970, low=4950, close=4968),
+            ],
+            stop_loss_pct=1,
+            orders=[
+                {"order_id": "long-1", "timestamp": "2026-07-01T13:30:00Z", "action": "target", "side": "long", "quantity": 1},
+                {"order_id": "long-2", "timestamp": "2026-07-01T13:31:00Z", "action": "target", "side": "long", "quantity": 1},
+                {"order_id": "long-3", "timestamp": "2026-07-01T13:32:00Z", "action": "target", "side": "long", "quantity": 1},
+                {"order_id": "flat", "timestamp": "2026-07-01T13:33:00Z", "action": "target", "side": "long", "quantity": 0},
+            ],
+        )
+    )
+
+    reasons = [event.reason for event in report.executions if event.event_type == "position_closed"]
+    assert "stop_loss" in reasons
+    assert "strategy_target_flat" in reasons
+    assert sum(1 for event in report.executions if event.event_type == "filled") == 2
+    assert any(event.event_type == "target_unchanged" for event in report.executions)
+
+
+def test_target_reversal_closes_then_opens_the_opposite_side():
+    report = run_derivatives_backtest(
+        _request(
+            orders=[
+                {"order_id": "long", "timestamp": "2026-07-01T13:30:00Z", "action": "target", "side": "long", "quantity": 1},
+                {"order_id": "short", "timestamp": "2026-07-01T13:31:00Z", "action": "target", "side": "short", "quantity": 1},
+            ]
+        )
+    )
+
+    assert any(event.reason == "strategy_target_rebalance" for event in report.executions)
+    fills = [event for event in report.executions if event.event_type == "filled"]
+    assert [event.side for event in fills] == ["long", "short"]
+    assert "target_rebalances_use_full_close_and_reopen" in report.warnings
+
+
+def test_target_order_attached_bracket_overrides_global_bracket():
+    report = run_derivatives_backtest(
+        _request(
+            take_profit_pct=50,
+            orders=[
+                {
+                    "order_id": "native-bracket",
+                    "timestamp": "2026-07-01T13:30:00Z",
+                    "action": "target",
+                    "side": "long",
+                    "quantity": 1,
+                    "attached_stop_price": 4990,
+                    "attached_target_price": 5004,
+                }
+            ],
+        )
+    )
+
+    close = next(event for event in report.executions if event.event_type == "position_closed")
+    assert close.reason == "take_profit"
+    assert close.price == 5004
+    fill = next(event for event in report.executions if event.event_type == "filled")
+    assert fill.metadata["attached_target_price"] == 5004
+
+
+def test_attached_multi_target_bracket_reduces_position_in_slices():
+    report = run_derivatives_backtest(
+        _request(
+            quantity=4,
+            starting_equity=100_000,
+            bars=[
+                _bar(30, open_=5000, high=5001, low=4999, close=5000),
+                _bar(31, open_=5000, high=5012, low=4998, close=5010),
+                _bar(32, open_=5010, high=5011, low=5008, close=5010),
+            ],
+            orders=[
+                {
+                    "order_id": "multi-target",
+                    "timestamp": "2026-07-01T13:30:00Z",
+                    "action": "target",
+                    "side": "long",
+                    "quantity": 4,
+                    "attached_stop_price": 4950,
+                    "attached_targets": [
+                        {"price": 5005, "close_fraction": 0.25},
+                        {"price": 5010, "close_fraction": 0.5},
+                    ],
+                }
+            ],
+        )
+    )
+
+    reductions = [event for event in report.executions if event.event_type == "position_reduced"]
+    assert [event.filled_quantity for event in reductions] == [1, 2]
+    final = next(event for event in report.executions if event.reason == "final_close")
+    assert final.filled_quantity == 1
+
+
+def test_attached_time_exit_and_trailing_activation_are_respected():
+    timed = run_derivatives_backtest(
+        _request(
+            bars=[
+                _bar(30, open_=5000, high=5005, low=4995, close=5001),
+                _bar(31, open_=5002, high=5100, low=4900, close=5000),
+            ],
+            orders=[{
+                "order_id": "timed",
+                "timestamp": "2026-07-01T13:30:00Z",
+                "action": "target",
+                "side": "long",
+                "quantity": 1,
+                "max_hold_bars": 1,
+            }],
+        )
+    )
+    assert any(event.reason == "time_exit" and event.price == 5002 for event in timed.executions)
+
+    activation = run_derivatives_backtest(
+        _request(
+            bars=[
+                _bar(30, open_=5000, high=5005, low=4995, close=5001),
+                _bar(31, open_=5001, high=5050, low=4900, close=5000),
+            ],
+            orders=[{
+                "order_id": "activation",
+                "timestamp": "2026-07-01T13:30:00Z",
+                "action": "target",
+                "side": "long",
+                "quantity": 1,
+                "attached_trailing_percent": 1,
+                "attached_trailing_activation_price": 5100,
+            }],
+        )
+    )
+    assert not any(event.reason == "trailing_stop" for event in activation.executions)
+    assert any(event.reason == "final_close" for event in activation.executions)
+
+
 def test_differential_audit_reports_parity_and_divergence():
     base = _request(orders=[])
     same_order = {

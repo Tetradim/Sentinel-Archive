@@ -417,6 +417,54 @@ export type DifferentialAuditReport = {
   combined_assessment: Record<string, unknown>;
 };
 
+export type ProfitabilityMetrics = {
+  out_of_sample_bars: number;
+  closed_trades: number;
+  compounded_return_pct: number;
+  annualized_sharpe_ratio: number;
+  annualized_sortino_ratio: number;
+  maximum_drawdown_pct: number;
+  benchmark_return_pct: number;
+  excess_return_pct: number;
+  bootstrap_return_lower_pct: number;
+  bootstrap_return_median_pct: number;
+  bootstrap_return_upper_pct: number;
+  probability_of_profit: number;
+  liquidation_count: number;
+  potential_debt: number;
+  worst_cost_stress_return_pct: number;
+};
+
+export type ProfitabilityStudyReport = {
+  study_id: string;
+  fingerprint: string;
+  name: string;
+  bot_id: string;
+  symbol: string;
+  asset_class: string;
+  verdict: 'profitable' | 'not_profitable' | 'inconclusive' | 'unsafe' | 'insufficient_data' | 'insufficient_strategy';
+  verdict_reasons: string[];
+  data_quality: Record<string, unknown>;
+  adapter?: Record<string, unknown> | null;
+  metrics?: ProfitabilityMetrics | null;
+  folds: Array<Record<string, unknown>>;
+  scenarios: Array<Record<string, unknown>>;
+  warnings: string[];
+  assumptions: Record<string, unknown>;
+};
+
+export type ProfitabilityComparisonReport = {
+  comparison_id: string;
+  fingerprint: string;
+  name: string;
+  studies: ProfitabilityStudyReport[];
+  rankings: Array<Record<string, unknown>>;
+  winner_study_id?: string | null;
+  winner_bot_id?: string | null;
+  comparable: boolean;
+  comparison_reasons: string[];
+};
+
 export type ArchiveDatasetsResponse = {
   datasets: ArchiveDatasetRecord[];
   limit: number;
@@ -628,6 +676,10 @@ export const api = {
     requestJson<DifferentialAuditReport>('/api/archive/derivatives/compare', { method: 'POST', body: JSON.stringify(body) }),
   derivativesRuns: (filters: Record<string, string | number | null | undefined> = {}) =>
     requestJson<{ runs: Array<DerivativesReport | DifferentialAuditReport> }>(`/api/archive/derivatives/runs${queryString(filters)}`),
+  runProfitabilityStudy: (body: Record<string, unknown>) =>
+    requestJson<ProfitabilityStudyReport>('/api/archive/profitability/study', { method: 'POST', body: JSON.stringify(body) }),
+  compareProfitability: (body: Record<string, unknown>) =>
+    requestJson<ProfitabilityComparisonReport>('/api/archive/profitability/compare', { method: 'POST', body: JSON.stringify(body) }),
   suitePlans: (limit = 100) => requestJson<{ plans: SuitePlan[] }>(`/api/archive/bot-suite/plans${queryString({ limit })}`),
   createSuitePlan: (request: SuitePlanRequest) =>
     requestJson<SuitePlan>('/api/archive/bot-suite/plans', {

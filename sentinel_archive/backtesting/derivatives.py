@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable
 
@@ -24,6 +24,7 @@ class _State:
     position: float = 0.0
     entry_price: float = 0.0
     entry_timestamp: str = ""
+    entry_quantity: float = 0.0
     initial_margin: float = 0.0
     realized_gross: float = 0.0
     fees: float = 0.0
@@ -35,7 +36,14 @@ class _State:
     high_water: float = 0.0
     low_water: float = 0.0
     debt: float = 0.0
-
+    attached_stop_price: float | None = None
+    attached_target_price: float | None = None
+    attached_targets: list[tuple[float, float]] = field(default_factory=list)
+    attached_trailing_percent: float | None = None
+    attached_trailing_activation_price: float | None = None
+    max_hold_bars: int | None = None
+    bars_held: int = 0
+    position_leverage: float = 1.0
 
 def run_derivatives_backtest(request: DerivativesRunRequest) -> DerivativesReport:
     _validate_request(request)
@@ -105,6 +113,7 @@ def run_derivatives_backtest(request: DerivativesRunRequest) -> DerivativesRepor
         )
         curve.append(_snapshot(bars[-1].timestamp, bars[-1].close, request, state))
 
+    had_position = bool(state.position)
     if state.position:
         warnings.add("open_position_at_end")
     if state.wallet < 0 or state.debt > 0:
@@ -179,12 +188,28 @@ def _process_order(
     events: list[ExecutionEvent],
     warnings: set[str],
 ) -> BacktestOrderIntent | None:
+    if order.preflight_rejection_reason:
+        _event(
+            events,
+            bar.timestamp,
+            "rejected",
+            order=order,
+            remaining=order.quantity,
+            reason=order.preflight_rejection_reason,
+            metadata=order.metadata,
+        )
+        return None
     if order.action == "cancel":
         _event(events, bar.timestamp, "cancel_acknowledged", order=order, reason="simulation_cancel")
         return None
     if order.action == "amend":
         _event(events, bar.timestamp, "amend_acknowledged", order=order, reason="simulation_amend")
         return None
+    if order.leverage is not None and order.leverage > request.contract.maximum_leverage:
+        _event(events, bar.timestamp, "rejected", order=order, remaining=order.quantity, reason="order_leverage_above_contract_limit")
+        return None
+    if order.action == "target":
+        return _process_target_order(order, bar, request, state, events, warnings)
 
     if order.order_type in {"limit", "stop_limit"} and order.limit_price is None:
         _event(events, bar.timestamp, "rejected", order=order, remaining=order.quantity, reason="missing_limit_price")
@@ -197,6 +222,10 @@ def _process_order(
         return None
     if order.action == "close" and not state.position:
         _event(events, bar.timestamp, "rejected", order=order, remaining=order.quantity, reason="position_not_found")
+        return None
+    effective_leverage = order.leverage or request.leverage
+    if effective_leverage > request.contract.maximum_leverage:
+        _event(events, bar.timestamp, "rejected", order=order, remaining=order.quantity, reason="order_leverage_above_contract_limit")
         return None
 
     trigger_price = _order_trigger_price(order, bar, state)
@@ -230,7 +259,7 @@ def _process_order(
     is_buy = order.side == "long"
     fill_price, slippage = _execution_price(trigger_price, bar, is_buy, request, quantity)
     notional = _notional(fill_price, quantity, request)
-    margin_rate = max(request.contract.initial_margin_rate, 1 / request.leverage)
+    margin_rate = max(request.contract.initial_margin_rate, 1 / effective_leverage)
     initial_margin = notional * margin_rate
     entry_costs = _costs(fill_price, quantity, request, is_maker=order.order_type == "limit")
     if initial_margin + entry_costs[0] > state.wallet:
@@ -248,9 +277,18 @@ def _process_order(
     state.position = quantity if order.side == "long" else -quantity
     state.entry_price = fill_price
     state.entry_timestamp = bar.timestamp
+    state.entry_quantity = quantity
     state.initial_margin = initial_margin
     state.high_water = fill_price
     state.low_water = fill_price
+    state.attached_stop_price = order.attached_stop_price
+    state.attached_target_price = order.attached_target_price
+    state.attached_targets = [(item.price, item.close_fraction) for item in order.attached_targets]
+    state.attached_trailing_percent = order.attached_trailing_percent
+    state.attached_trailing_activation_price = order.attached_trailing_activation_price
+    state.max_hold_bars = order.max_hold_bars
+    state.bars_held = 0
+    state.position_leverage = effective_leverage
     state.wallet -= entry_costs[0]
     _record_costs(state, entry_costs, slippage)
     event_type = "partial_fill" if remaining else "filled"
@@ -264,7 +302,18 @@ def _process_order(
         price=fill_price,
         fee=entry_costs[0],
         reason=liquidity_reason if remaining else None,
-        metadata={"initial_margin": initial_margin, "notional": notional, "slippage": slippage},
+        metadata={
+            "initial_margin": initial_margin,
+            "notional": notional,
+            "slippage": slippage,
+            "attached_stop_price": order.attached_stop_price,
+            "attached_target_price": order.attached_target_price,
+            "attached_targets": [item.model_dump(mode="json") for item in order.attached_targets],
+            "attached_trailing_percent": order.attached_trailing_percent,
+            "attached_trailing_activation_price": order.attached_trailing_activation_price,
+            "max_hold_bars": order.max_hold_bars,
+            "leverage": effective_leverage,
+        },
     )
     if remaining:
         warnings.add("partial_fill")
@@ -274,6 +323,50 @@ def _process_order(
             return None
         _event(events, bar.timestamp, "unfilled", order=order, remaining=remaining, reason="ioc_remainder_cancelled")
     return None
+
+
+def _process_target_order(
+    order: BacktestOrderIntent,
+    bar: MarketPriceBar,
+    request: DerivativesRunRequest,
+    state: _State,
+    events: list[ExecutionEvent],
+    warnings: set[str],
+) -> BacktestOrderIntent | None:
+    if order.order_type != "market":
+        _event(events, bar.timestamp, "rejected", order=order, remaining=order.quantity, reason="target_requires_market_order")
+        return None
+
+    target = order.quantity if order.side == "long" else -order.quantity
+    tolerance = request.contract.quantity_step / 2
+    if abs(state.position - target) <= tolerance:
+        _event(events, bar.timestamp, "target_unchanged", order=order, reason="position_matches_target")
+        return None
+
+    had_position = bool(state.position)
+    if state.position:
+        _close_position(
+            bar,
+            bar.open,
+            "strategy_target_rebalance" if target else "strategy_target_flat",
+            request,
+            state,
+            events,
+            order_id=f"{order.order_id}:close",
+        )
+    if not target:
+        return None
+
+    if had_position:
+        warnings.add("target_rebalances_use_full_close_and_reopen")
+    return _process_order(
+        order.model_copy(update={"action": "open", "quantity": abs(target)}),
+        bar,
+        request,
+        state,
+        events,
+        warnings,
+    )
 
 
 def _order_trigger_price(order: BacktestOrderIntent, bar: MarketPriceBar, state: _State) -> float | None:
@@ -340,6 +433,10 @@ def _evaluate_position_bar(
     warnings: set[str],
 ) -> None:
     side = "long" if state.position > 0 else "short"
+    if state.max_hold_bars is not None and state.bars_held >= state.max_hold_bars:
+        _close_position(bar, bar.open, "time_exit", request, state, events, order_id="auto-time-exit")
+        _cancel_oco(bar.timestamp, events, "auto-bracket", "auto-time-exit")
+        return
     liquidation = _liquidation_price(request, state)
     stop = _stop_price(request, state)
     target = _target_price(request, state)
@@ -371,6 +468,7 @@ def _evaluate_position_bar(
     if target is not None and _bar_crossed(bar, target, side, adverse=False):
         candidates.append(("take_profit", target, "favorable"))
     if not candidates:
+        state.bars_held += 1
         return
 
     if len(candidates) > 1:
@@ -390,6 +488,11 @@ def _evaluate_position_bar(
     liquidated = reason == "liquidation"
     if liquidated:
         warnings.add("liquidated")
+    if reason == "take_profit" and state.attached_targets:
+        _fill_attached_targets(bar, request, state, events)
+        if state.position:
+            state.bars_held += 1
+        return
     _close_position(bar, price, reason, request, state, events, order_id=f"auto-{reason}", liquidated=liquidated)
     _cancel_oco(bar.timestamp, events, "auto-bracket", f"auto-{reason}")
 
@@ -467,9 +570,18 @@ def _close_position(
     state.position = 0.0
     state.entry_price = 0.0
     state.entry_timestamp = ""
+    state.entry_quantity = 0.0
     state.initial_margin = 0.0
     state.high_water = 0.0
     state.low_water = 0.0
+    state.attached_stop_price = None
+    state.attached_target_price = None
+    state.attached_targets = []
+    state.attached_trailing_percent = None
+    state.attached_trailing_activation_price = None
+    state.max_hold_bars = None
+    state.bars_held = 0
+    state.position_leverage = 1.0
 
 
 def _apply_funding(
@@ -554,6 +666,8 @@ def _liquidation_price(request: DerivativesRunRequest, state: _State) -> float:
 
 
 def _stop_price(request: DerivativesRunRequest, state: _State) -> float | None:
+    if state.attached_stop_price is not None:
+        return state.attached_stop_price
     if request.stop_loss_pct is None:
         return None
     distance = state.entry_price * request.stop_loss_pct / 100
@@ -561,6 +675,10 @@ def _stop_price(request: DerivativesRunRequest, state: _State) -> float | None:
 
 
 def _target_price(request: DerivativesRunRequest, state: _State) -> float | None:
+    if state.attached_targets:
+        return state.attached_targets[0][0]
+    if state.attached_target_price is not None:
+        return state.attached_target_price
     if request.take_profit_pct is None:
         return None
     distance = state.entry_price * request.take_profit_pct / 100
@@ -568,11 +686,120 @@ def _target_price(request: DerivativesRunRequest, state: _State) -> float | None
 
 
 def _trailing_price(request: DerivativesRunRequest, state: _State) -> float | None:
-    if request.trailing_stop_pct is None:
+    trailing_percent = state.attached_trailing_percent or request.trailing_stop_pct
+    if trailing_percent is None:
         return None
+    activation = state.attached_trailing_activation_price
+    if activation is not None:
+        if state.position > 0 and state.high_water < activation:
+            return None
+        if state.position < 0 and state.low_water > activation:
+            return None
     if state.position > 0:
-        return state.high_water * (1 - request.trailing_stop_pct / 100)
-    return state.low_water * (1 + request.trailing_stop_pct / 100)
+        return state.high_water * (1 - trailing_percent / 100)
+    return state.low_water * (1 + trailing_percent / 100)
+
+
+def _fill_attached_targets(
+    bar: MarketPriceBar,
+    request: DerivativesRunRequest,
+    state: _State,
+    events: list[ExecutionEvent],
+) -> None:
+    side = "long" if state.position > 0 else "short"
+    target_index = 0
+    while state.position and state.attached_targets:
+        price, close_fraction = state.attached_targets[0]
+        if not _bar_crossed(bar, price, side, adverse=False):
+            break
+        state.attached_targets.pop(0)
+        requested_quantity = min(abs(state.position), state.entry_quantity * close_fraction)
+        quantity = _floor_step(requested_quantity, request.contract.quantity_step)
+        if quantity < request.contract.minimum_quantity:
+            _event(
+                events,
+                bar.timestamp,
+                "rejected",
+                reason="attached_target_below_minimum_quantity",
+                metadata={"requested_quantity": requested_quantity, "target_price": price},
+            )
+            continue
+        _reduce_position(
+            bar,
+            price,
+            quantity,
+            request,
+            state,
+            events,
+            order_id=f"auto-take_profit:{target_index}",
+        )
+        target_index += 1
+    if not state.position:
+        _cancel_oco(bar.timestamp, events, "auto-bracket", "auto-take_profit")
+
+
+def _reduce_position(
+    bar: MarketPriceBar,
+    raw_price: float,
+    quantity: float,
+    request: DerivativesRunRequest,
+    state: _State,
+    events: list[ExecutionEvent],
+    *,
+    order_id: str,
+) -> None:
+    if not state.position:
+        return
+    side = "long" if state.position > 0 else "short"
+    quantity = min(quantity, abs(state.position))
+    is_buy = side == "short"
+    fill_price, slippage = _execution_price(raw_price, bar, is_buy, request, quantity)
+    signed_quantity = quantity if state.position > 0 else -quantity
+    gross = (fill_price - state.entry_price) * signed_quantity * request.contract.contract_multiplier
+    costs = _costs(fill_price, quantity, request, is_maker=False)
+    state.wallet += gross - costs[0]
+    state.realized_gross += gross
+    _record_costs(state, costs, slippage)
+    previous_quantity = abs(state.position)
+    state.position -= signed_quantity
+    state.initial_margin *= max(0.0, abs(state.position) / previous_quantity)
+    state.debt = max(state.debt, max(0.0, -state.wallet))
+    _event(
+        events,
+        bar.timestamp,
+        "position_reduced",
+        order=BacktestOrderIntent(
+            order_id=order_id,
+            timestamp=bar.timestamp,
+            action="close",
+            side=side,
+            order_type="market",
+            quantity=quantity,
+            reduce_only=True,
+            oco_group="auto-bracket",
+        ),
+        filled=quantity,
+        price=fill_price,
+        fee=costs[0],
+        reason="take_profit_partial",
+        metadata={"gross_pnl": gross, "slippage": slippage, "remaining_quantity": abs(state.position)},
+    )
+    if abs(state.position) <= request.contract.quantity_step / 2:
+        state.position = 0.0
+        state.entry_price = 0.0
+        state.entry_timestamp = ""
+        state.entry_quantity = 0.0
+        state.initial_margin = 0.0
+        state.high_water = 0.0
+        state.low_water = 0.0
+        state.attached_stop_price = None
+        state.attached_target_price = None
+        state.attached_targets = []
+        state.attached_trailing_percent = None
+        state.attached_trailing_activation_price = None
+        state.max_hold_bars = None
+        state.bars_held = 0
+        state.position_leverage = 1.0
 
 
 def _bar_crossed(bar: MarketPriceBar, price: float | None, side: str, *, adverse: bool) -> bool:
@@ -656,7 +883,7 @@ def _metrics(
         total_exchange_fees=state.exchange_fees,
         total_liquidation_fees=state.liquidation_fees,
         order_count=sum(1 for event in events if event.order_id and event.event_type not in {"funding", "same_bar_ambiguity", "oco_cancelled"}),
-        fill_count=event_types.count("filled") + event_types.count("partial_fill") + event_types.count("position_closed") + event_types.count("liquidated"),
+        fill_count=event_types.count("filled") + event_types.count("partial_fill") + event_types.count("position_reduced") + event_types.count("position_closed") + event_types.count("liquidated"),
         partial_fill_count=event_types.count("partial_fill"),
         rejection_count=event_types.count("rejected"),
         unfilled_count=event_types.count("unfilled"),
