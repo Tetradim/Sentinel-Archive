@@ -1,0 +1,1409 @@
+{
+  "assumptions": {
+    "capital_per_ticker": 10000.0,
+    "commission_per_order": 0.0,
+    "decision_sample": "recorded candle close only",
+    "end_of_window_open_positions": "marked to final close with hypothetical exit slippage; not counted as bot exits",
+    "slippage_bps_per_order": 2.0
+  },
+  "automation_audit": {
+    "chain": {
+      "autonomous_candle_to_entry_loop": false,
+      "classification": "not_autonomously_testable",
+      "evidence": [
+        "Strategy presets normalize operator/external entries and explicitly do not generate signals.",
+        "Scalper helpers construct or re-bracket externally selected bands; they do not discover an entry from candles."
+      ],
+      "replay_orders": 0,
+      "replay_pnl": 0.0,
+      "source_checks": {
+        "preset_non_generation_marker_present": true,
+        "scalper_sha256": "fda0791aceced2ecdde094f1d8d89e118edde22dcf55270f8881e495bc5d8c69",
+        "strategy_presets_sha256": "3bc0f92f503c97e6c38467dd77e11dd5a6fd9a62f08ef3d6625ce6ad80b078e7"
+      }
+    },
+    "iron": {
+      "autonomous_candle_to_entry_loop": false,
+      "classification": "not_autonomously_testable",
+      "evidence": [
+        "Iron has trend/carry signal calculations, target sizing, order planning, and broker submission components.",
+        "The current README explicitly says autonomous strategy-driven live order entry does not yet run."
+      ],
+      "replay_orders": 0,
+      "replay_pnl": 0.0,
+      "source_checks": {
+        "readme_non_autonomous_marker_present": true,
+        "readme_sha256": "72e506a774e29400217bb7467f5a53342d2401fef5e98981897a2549a215c4f9",
+        "trend_following_sha256": "012ab2749f8bb8acfaefb6b1856e773676b51213cf6b29ceaa9395e44431728c"
+      }
+    }
+  },
+  "datasets": [
+    {
+      "bar_count": 666,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "d494e5714c55aee743c79629b1bf72901166a2755a35c5cedbd25b41e6881ce1",
+      "first_timestamp": "2026-03-02T14:30:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T20:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:56.463308+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/SPY",
+      "symbol": "SPY",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 666,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "28ac65b69573867757177a2f7699ba860c0ebe1c2e3eca7026f3483c2dcae7e1",
+      "first_timestamp": "2026-03-02T14:30:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T20:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:56.729607+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/QQQ",
+      "symbol": "QQQ",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 666,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "daa757803457d15ba5c2bc018670a8ebc7268dbb5cb7090e9326f515e1811999",
+      "first_timestamp": "2026-03-02T14:30:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T20:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:57.004594+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/TSLA",
+      "symbol": "TSLA",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 2194,
+      "dropped_rows": 543,
+      "fingerprint_sha256": "e93f0610d22961a184cf770257ea208e7eff26e24df05cea6aaa09b205ec1715",
+      "first_timestamp": "2026-03-01T23:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:57.405145+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/MES%3DF",
+      "symbol": "MES=F",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 2195,
+      "dropped_rows": 542,
+      "fingerprint_sha256": "e32aeac162498db06a77be210af37e3eec1c838bdc38392286d156697cc31e9e",
+      "first_timestamp": "2026-03-01T23:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:57.766337+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/MNQ%3DF",
+      "symbol": "MNQ=F",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 3311,
+      "dropped_rows": 1,
+      "fingerprint_sha256": "04fb735d8e5becae335e462804ada4d594adbf98a28efdd5c468c1b743c7f895",
+      "first_timestamp": "2026-03-01T00:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:58.171359+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD",
+      "symbol": "BTC-USD",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 384,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "74d6a45b9a71676f16f2be2297d9702a44823f500ed4387226cde8f07e9649b7",
+      "first_timestamp": "2025-01-02T14:30:00Z",
+      "interval": "1d",
+      "last_timestamp": "2026-07-16T13:30:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:58.453248+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/SPY",
+      "symbol": "SPY",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 833,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "6de9165e195e56faa56ad2de7e6b9498e772b30222821b8d57dd38d53981bc5c",
+      "first_timestamp": "2026-06-01T13:30:00Z",
+      "interval": "15m",
+      "last_timestamp": "2026-07-16T20:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:58.864543+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/SPY",
+      "symbol": "SPY",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 384,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "84f107d22b26fc6e397386b693b272bca7c616b5bf5dbda1221b940ded7e7a85",
+      "first_timestamp": "2025-01-02T14:30:00Z",
+      "interval": "1d",
+      "last_timestamp": "2026-07-16T13:30:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:59.138369+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/QQQ",
+      "symbol": "QQQ",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 833,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "d549843e7a10d2c74ffc921a3f490ebc686cc3dd196fbfd9d45bf9874d7ce7af",
+      "first_timestamp": "2026-06-01T13:30:00Z",
+      "interval": "15m",
+      "last_timestamp": "2026-07-16T20:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:59.366535+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/QQQ",
+      "symbol": "QQQ",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 384,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "7571b052e3e701ce74c18287dde04641b28823f7c2e2784ab3699c57a5caab14",
+      "first_timestamp": "2025-01-02T14:30:00Z",
+      "interval": "1d",
+      "last_timestamp": "2026-07-16T13:30:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:59.583963+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/TSLA",
+      "symbol": "TSLA",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 833,
+      "dropped_rows": 0,
+      "fingerprint_sha256": "1534513e36edcb513235a5b32b0e2ad4dd9c95959ab5d46143afd0172a0d82ab",
+      "first_timestamp": "2026-06-01T13:30:00Z",
+      "interval": "15m",
+      "last_timestamp": "2026-07-16T20:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:59.873084+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/TSLA",
+      "symbol": "TSLA",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    {
+      "bar_count": 2552,
+      "dropped_rows": 16,
+      "fingerprint_sha256": "c290dd4a5f89ed777dee3f90bb557a20a87f7d1a8c54f9ff699f9835d064d698",
+      "first_timestamp": "2026-04-01T00:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "bitunix_futures",
+      "retrieved_at": "2026-07-17T11:48:07.204986+00:00",
+      "source": "https://fapi.bitunix.com/api/v1/futures/market/kline",
+      "symbol": "BTCUSDT",
+      "warnings": [
+        "malformed_upstream_rows_excluded"
+      ]
+    }
+  ],
+  "futures_feed_coverage": {
+    "chain_bitunix_btcusdt": {
+      "bar_count": 2552,
+      "dropped_rows": 16,
+      "fingerprint_sha256": "c290dd4a5f89ed777dee3f90bb557a20a87f7d1a8c54f9ff699f9835d064d698",
+      "first_timestamp": "2026-04-01T00:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "bitunix_futures",
+      "retrieved_at": "2026-07-17T11:48:07.204986+00:00",
+      "source": "https://fapi.bitunix.com/api/v1/futures/market/kline",
+      "symbol": "BTCUSDT",
+      "warnings": [
+        "malformed_upstream_rows_excluded"
+      ]
+    },
+    "chain_reference_btcusd": {
+      "bar_count": 3311,
+      "dropped_rows": 1,
+      "fingerprint_sha256": "04fb735d8e5becae335e462804ada4d594adbf98a28efdd5c468c1b743c7f895",
+      "first_timestamp": "2026-03-01T00:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:58.171359+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD",
+      "symbol": "BTC-USD",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    "iron_mes": {
+      "bar_count": 2194,
+      "dropped_rows": 543,
+      "fingerprint_sha256": "e93f0610d22961a184cf770257ea208e7eff26e24df05cea6aaa09b205ec1715",
+      "first_timestamp": "2026-03-01T23:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:57.405145+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/MES%3DF",
+      "symbol": "MES=F",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    },
+    "iron_mnq": {
+      "bar_count": 2195,
+      "dropped_rows": 542,
+      "fingerprint_sha256": "e32aeac162498db06a77be210af37e3eec1c838bdc38392286d156697cc31e9e",
+      "first_timestamp": "2026-03-01T23:00:00Z",
+      "interval": "1h",
+      "last_timestamp": "2026-07-16T23:00:00Z",
+      "provider": "yahoo_chart",
+      "retrieved_at": "2026-07-17T11:47:57.766337+00:00",
+      "source": "https://query1.finance.yahoo.com/v8/finance/chart/MNQ%3DF",
+      "symbol": "MNQ=F",
+      "warnings": [
+        "unofficial_research_interface"
+      ]
+    }
+  },
+  "generated_at": "2026-07-17T11:49:11.672496+00:00",
+  "pulse": {
+    "candidate_settings_per_symbol": 327,
+    "common_configuration": {
+      "config": {
+        "avg_days": 60,
+        "buy_offset": -3.0,
+        "id": "avg60_buym3p0_sell6p0_stopm2p0_trail2p0",
+        "sell_offset": 6.0,
+        "stop_offset": -2.0,
+        "trailing_enabled": true,
+        "trailing_percent": 2.0
+      },
+      "tuning_closed_trades": 12,
+      "tuning_max_drawdown_sum": 1332.3785,
+      "tuning_net_pnl": 2561.568
+    },
+    "common_configuration_held_out": [
+      {
+        "bar_count": 225,
+        "config": {
+          "avg_days": 60,
+          "buy_offset": -3.0,
+          "id": "avg60_buym3p0_sell6p0_stopm2p0_trail2p0",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": true,
+          "trailing_percent": 2.0
+        },
+        "first_bar": "2026-06-01T13:30:00Z",
+        "last_bar": "2026-07-16T20:00:00Z",
+        "metrics": {
+          "closed_trades": 0,
+          "final_mark": 750.72,
+          "max_drawdown": 0.0,
+          "max_drawdown_pct": 0.0,
+          "modeled_friction": 0.0,
+          "open_entry": 0.0,
+          "open_quantity": 0.0,
+          "orders": 0,
+          "realized_gross_pnl": 0,
+          "return_pct": 0.0,
+          "total_net_pnl": 0.0,
+          "unrealized_gross_pnl": 0.0,
+          "win_rate_pct": 0.0,
+          "winning_trades": 0
+        },
+        "symbol": "SPY"
+      },
+      {
+        "bar_count": 225,
+        "config": {
+          "avg_days": 60,
+          "buy_offset": -3.0,
+          "id": "avg60_buym3p0_sell6p0_stopm2p0_trail2p0",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": true,
+          "trailing_percent": 2.0
+        },
+        "first_bar": "2026-06-01T13:30:00Z",
+        "last_bar": "2026-07-16T20:00:00Z",
+        "metrics": {
+          "closed_trades": 0,
+          "final_mark": 705.94,
+          "max_drawdown": 0.0,
+          "max_drawdown_pct": 0.0,
+          "modeled_friction": 0.0,
+          "open_entry": 0.0,
+          "open_quantity": 0.0,
+          "orders": 0,
+          "realized_gross_pnl": 0,
+          "return_pct": 0.0,
+          "total_net_pnl": 0.0,
+          "unrealized_gross_pnl": 0.0,
+          "win_rate_pct": 0.0,
+          "winning_trades": 0
+        },
+        "symbol": "QQQ"
+      },
+      {
+        "bar_count": 225,
+        "config": {
+          "avg_days": 60,
+          "buy_offset": -3.0,
+          "id": "avg60_buym3p0_sell6p0_stopm2p0_trail2p0",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": true,
+          "trailing_percent": 2.0
+        },
+        "first_bar": "2026-06-01T13:30:00Z",
+        "last_bar": "2026-07-16T20:00:00Z",
+        "metrics": {
+          "closed_trades": 4,
+          "final_mark": 391.06,
+          "max_drawdown": 347.0627,
+          "max_drawdown_pct": 3.470627,
+          "modeled_friction": 20.2281,
+          "open_entry": 389.015,
+          "open_quantity": 25.7059,
+          "orders": 9,
+          "realized_gross_pnl": 1087.97,
+          "return_pct": 11.2031,
+          "total_net_pnl": 1120.31,
+          "unrealized_gross_pnl": 52.5681,
+          "win_rate_pct": 50.0,
+          "winning_trades": 2
+        },
+        "symbol": "TSLA"
+      }
+    ],
+    "held_out_validation": {
+      "QQQ": {
+        "bar_count": 225,
+        "config": {
+          "avg_days": 30,
+          "buy_offset": -0.5,
+          "id": "avg30_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "first_bar": "2026-06-01T13:30:00Z",
+        "last_bar": "2026-07-16T20:00:00Z",
+        "metrics": {
+          "closed_trades": 1,
+          "final_mark": 705.94,
+          "max_drawdown": 497.3673,
+          "max_drawdown_pct": 4.973673,
+          "modeled_friction": 8.0944,
+          "open_entry": 715.77,
+          "open_quantity": 13.971,
+          "orders": 3,
+          "realized_gross_pnl": 609.14,
+          "return_pct": 4.637105,
+          "total_net_pnl": 463.7105,
+          "unrealized_gross_pnl": -137.3352,
+          "win_rate_pct": 100.0,
+          "winning_trades": 1
+        },
+        "symbol": "QQQ"
+      },
+      "SPY": {
+        "bar_count": 225,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -0.5,
+          "id": "avg14_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "first_bar": "2026-06-01T13:30:00Z",
+        "last_bar": "2026-07-16T20:00:00Z",
+        "metrics": {
+          "closed_trades": 1,
+          "final_mark": 750.72,
+          "max_drawdown": 375.226,
+          "max_drawdown_pct": 3.75226,
+          "modeled_friction": 8.008,
+          "open_entry": 730.76,
+          "open_quantity": 13.6844,
+          "orders": 3,
+          "realized_gross_pnl": -233.37,
+          "return_pct": 0.317621,
+          "total_net_pnl": 31.7621,
+          "unrealized_gross_pnl": 273.1401,
+          "win_rate_pct": 0.0,
+          "winning_trades": 0
+        },
+        "symbol": "SPY"
+      },
+      "TSLA": {
+        "bar_count": 225,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -1.5,
+          "id": "avg14_buym1p5_sell6p0_stopm8p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -8.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "first_bar": "2026-06-01T13:30:00Z",
+        "last_bar": "2026-07-16T20:00:00Z",
+        "metrics": {
+          "closed_trades": 4,
+          "final_mark": 391.06,
+          "max_drawdown": 1155.0966,
+          "max_drawdown_pct": 11.550966,
+          "modeled_friction": 20.2257,
+          "open_entry": 391.97,
+          "open_quantity": 25.5122,
+          "orders": 9,
+          "realized_gross_pnl": 1151.73,
+          "return_pct": 11.082881,
+          "total_net_pnl": 1108.2881,
+          "unrealized_gross_pnl": -23.2162,
+          "win_rate_pct": 75.0,
+          "winning_trades": 3
+        },
+        "symbol": "TSLA"
+      }
+    },
+    "native_entry_method": "TradingEngine.evaluate_ticker",
+    "selected_by_symbol": {
+      "QQQ": {
+        "bar_count": 287,
+        "config": {
+          "avg_days": 30,
+          "buy_offset": -0.5,
+          "id": "avg30_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "first_bar": "2026-04-01T13:30:00Z",
+        "last_bar": "2026-05-29T19:30:00Z",
+        "metrics": {
+          "closed_trades": 1,
+          "final_mark": 738.225,
+          "max_drawdown": 156.0396,
+          "max_drawdown_pct": 1.560396,
+          "modeled_friction": 4.1366,
+          "open_entry": 0.0,
+          "open_quantity": 0.0,
+          "orders": 2,
+          "realized_gross_pnl": 683.08,
+          "return_pct": 6.789434,
+          "total_net_pnl": 678.9434,
+          "unrealized_gross_pnl": 0.0,
+          "win_rate_pct": 100.0,
+          "winning_trades": 1
+        },
+        "symbol": "QQQ"
+      },
+      "SPY": {
+        "bar_count": 287,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -0.5,
+          "id": "avg14_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "first_bar": "2026-04-01T13:30:00Z",
+        "last_bar": "2026-05-29T19:30:00Z",
+        "metrics": {
+          "closed_trades": 1,
+          "final_mark": 756.4,
+          "max_drawdown": 86.3395,
+          "max_drawdown_pct": 0.863395,
+          "modeled_friction": 4.125,
+          "open_entry": 0.0,
+          "open_quantity": 0.0,
+          "orders": 2,
+          "realized_gross_pnl": 624.9,
+          "return_pct": 6.20775,
+          "total_net_pnl": 620.775,
+          "unrealized_gross_pnl": 0.0,
+          "win_rate_pct": 100.0,
+          "winning_trades": 1
+        },
+        "symbol": "SPY"
+      },
+      "TSLA": {
+        "bar_count": 287,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -1.5,
+          "id": "avg14_buym1p5_sell6p0_stopm8p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -8.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "first_bar": "2026-04-01T13:30:00Z",
+        "last_bar": "2026-05-29T19:30:00Z",
+        "metrics": {
+          "closed_trades": 3,
+          "final_mark": 435.56,
+          "max_drawdown": 741.9199,
+          "max_drawdown_pct": 7.419199,
+          "modeled_friction": 12.3856,
+          "open_entry": 0.0,
+          "open_quantity": 0.0,
+          "orders": 6,
+          "realized_gross_pnl": 1928.23,
+          "return_pct": 19.158444,
+          "total_net_pnl": 1915.8444,
+          "unrealized_gross_pnl": 0.0,
+          "win_rate_pct": 100.0,
+          "winning_trades": 3
+        },
+        "symbol": "TSLA"
+      }
+    },
+    "selection_rule": "maximum modeled net P&L with at least one completed April\u2013May round trip",
+    "top_five_tuning_by_symbol": {
+      "QQQ": [
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 30,
+            "buy_offset": -0.5,
+            "id": "avg30_buym0p5_sell6p0_stopm2p0_trailoff",
+            "sell_offset": 6.0,
+            "stop_offset": -2.0,
+            "trailing_enabled": false,
+            "trailing_percent": 0.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 738.225,
+            "max_drawdown": 156.0396,
+            "max_drawdown_pct": 1.560396,
+            "modeled_friction": 4.1366,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 683.08,
+            "return_pct": 6.789434,
+            "total_net_pnl": 678.9434,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "QQQ"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 30,
+            "buy_offset": -0.5,
+            "id": "avg30_buym0p5_sell6p0_stopm2p0_trail2p0",
+            "sell_offset": 6.0,
+            "stop_offset": -2.0,
+            "trailing_enabled": true,
+            "trailing_percent": 2.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 738.225,
+            "max_drawdown": 156.0396,
+            "max_drawdown_pct": 1.560396,
+            "modeled_friction": 4.1366,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 683.08,
+            "return_pct": 6.789434,
+            "total_net_pnl": 678.9434,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "QQQ"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 30,
+            "buy_offset": -0.5,
+            "id": "avg30_buym0p5_sell6p0_stopm5p0_trailoff",
+            "sell_offset": 6.0,
+            "stop_offset": -5.0,
+            "trailing_enabled": false,
+            "trailing_percent": 0.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 738.225,
+            "max_drawdown": 156.0396,
+            "max_drawdown_pct": 1.560396,
+            "modeled_friction": 4.1366,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 683.08,
+            "return_pct": 6.789434,
+            "total_net_pnl": 678.9434,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "QQQ"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 30,
+            "buy_offset": -0.5,
+            "id": "avg30_buym0p5_sell6p0_stopm5p0_trail2p0",
+            "sell_offset": 6.0,
+            "stop_offset": -5.0,
+            "trailing_enabled": true,
+            "trailing_percent": 2.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 738.225,
+            "max_drawdown": 156.0396,
+            "max_drawdown_pct": 1.560396,
+            "modeled_friction": 4.1366,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 683.08,
+            "return_pct": 6.789434,
+            "total_net_pnl": 678.9434,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "QQQ"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 30,
+            "buy_offset": -0.5,
+            "id": "avg30_buym0p5_sell6p0_stopm8p0_trailoff",
+            "sell_offset": 6.0,
+            "stop_offset": -8.0,
+            "trailing_enabled": false,
+            "trailing_percent": 0.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 738.225,
+            "max_drawdown": 156.0396,
+            "max_drawdown_pct": 1.560396,
+            "modeled_friction": 4.1366,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 683.08,
+            "return_pct": 6.789434,
+            "total_net_pnl": 678.9434,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "QQQ"
+        }
+      ],
+      "SPY": [
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -0.5,
+            "id": "avg14_buym0p5_sell6p0_stopm2p0_trailoff",
+            "sell_offset": 6.0,
+            "stop_offset": -2.0,
+            "trailing_enabled": false,
+            "trailing_percent": 0.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 756.4,
+            "max_drawdown": 86.3395,
+            "max_drawdown_pct": 0.863395,
+            "modeled_friction": 4.125,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 624.9,
+            "return_pct": 6.20775,
+            "total_net_pnl": 620.775,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "SPY"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -0.5,
+            "id": "avg14_buym0p5_sell6p0_stopm2p0_trail1p0",
+            "sell_offset": 6.0,
+            "stop_offset": -2.0,
+            "trailing_enabled": true,
+            "trailing_percent": 1.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 756.4,
+            "max_drawdown": 86.3395,
+            "max_drawdown_pct": 0.863395,
+            "modeled_friction": 4.125,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 624.9,
+            "return_pct": 6.20775,
+            "total_net_pnl": 620.775,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "SPY"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -0.5,
+            "id": "avg14_buym0p5_sell6p0_stopm2p0_trail2p0",
+            "sell_offset": 6.0,
+            "stop_offset": -2.0,
+            "trailing_enabled": true,
+            "trailing_percent": 2.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 756.4,
+            "max_drawdown": 86.3395,
+            "max_drawdown_pct": 0.863395,
+            "modeled_friction": 4.125,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 624.9,
+            "return_pct": 6.20775,
+            "total_net_pnl": 620.775,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "SPY"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -0.5,
+            "id": "avg14_buym0p5_sell6p0_stopm5p0_trailoff",
+            "sell_offset": 6.0,
+            "stop_offset": -5.0,
+            "trailing_enabled": false,
+            "trailing_percent": 0.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 756.4,
+            "max_drawdown": 86.3395,
+            "max_drawdown_pct": 0.863395,
+            "modeled_friction": 4.125,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 624.9,
+            "return_pct": 6.20775,
+            "total_net_pnl": 620.775,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "SPY"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -0.5,
+            "id": "avg14_buym0p5_sell6p0_stopm5p0_trail1p0",
+            "sell_offset": 6.0,
+            "stop_offset": -5.0,
+            "trailing_enabled": true,
+            "trailing_percent": 1.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 1,
+            "final_mark": 756.4,
+            "max_drawdown": 86.3395,
+            "max_drawdown_pct": 0.863395,
+            "modeled_friction": 4.125,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 2,
+            "realized_gross_pnl": 624.9,
+            "return_pct": 6.20775,
+            "total_net_pnl": 620.775,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 1
+          },
+          "symbol": "SPY"
+        }
+      ],
+      "TSLA": [
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -1.5,
+            "id": "avg14_buym1p5_sell6p0_stopm8p0_trailoff",
+            "sell_offset": 6.0,
+            "stop_offset": -8.0,
+            "trailing_enabled": false,
+            "trailing_percent": 0.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 3,
+            "final_mark": 435.56,
+            "max_drawdown": 741.9199,
+            "max_drawdown_pct": 7.419199,
+            "modeled_friction": 12.3856,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 6,
+            "realized_gross_pnl": 1928.23,
+            "return_pct": 19.158444,
+            "total_net_pnl": 1915.8444,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 100.0,
+            "winning_trades": 3
+          },
+          "symbol": "TSLA"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -1.5,
+            "id": "avg14_buym1p5_sell6p0_stopm2p0_trail1p0",
+            "sell_offset": 6.0,
+            "stop_offset": -2.0,
+            "trailing_enabled": true,
+            "trailing_percent": 1.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 8,
+            "final_mark": 435.56,
+            "max_drawdown": 658.2311,
+            "max_drawdown_pct": 6.582311,
+            "modeled_friction": 32.3112,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 16,
+            "realized_gross_pnl": 1555.87,
+            "return_pct": 15.235588,
+            "total_net_pnl": 1523.5588,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 62.5,
+            "winning_trades": 5
+          },
+          "symbol": "TSLA"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -1.5,
+            "id": "avg14_buym1p5_sell6p0_stopm5p0_trail1p0",
+            "sell_offset": 6.0,
+            "stop_offset": -5.0,
+            "trailing_enabled": true,
+            "trailing_percent": 1.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 8,
+            "final_mark": 435.56,
+            "max_drawdown": 658.2311,
+            "max_drawdown_pct": 6.582311,
+            "modeled_friction": 32.3112,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 16,
+            "realized_gross_pnl": 1555.87,
+            "return_pct": 15.235588,
+            "total_net_pnl": 1523.5588,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 62.5,
+            "winning_trades": 5
+          },
+          "symbol": "TSLA"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -1.5,
+            "id": "avg14_buym1p5_sell6p0_stopm8p0_trail1p0",
+            "sell_offset": 6.0,
+            "stop_offset": -8.0,
+            "trailing_enabled": true,
+            "trailing_percent": 1.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 8,
+            "final_mark": 435.56,
+            "max_drawdown": 658.2311,
+            "max_drawdown_pct": 6.582311,
+            "modeled_friction": 32.3112,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 16,
+            "realized_gross_pnl": 1555.87,
+            "return_pct": 15.235588,
+            "total_net_pnl": 1523.5588,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 62.5,
+            "winning_trades": 5
+          },
+          "symbol": "TSLA"
+        },
+        {
+          "bar_count": 287,
+          "config": {
+            "avg_days": 14,
+            "buy_offset": -0.5,
+            "id": "avg14_buym0p5_sell6p0_stopm2p0_trail1p0",
+            "sell_offset": 6.0,
+            "stop_offset": -2.0,
+            "trailing_enabled": true,
+            "trailing_percent": 1.0
+          },
+          "first_bar": "2026-04-01T13:30:00Z",
+          "last_bar": "2026-05-29T19:30:00Z",
+          "metrics": {
+            "closed_trades": 11,
+            "final_mark": 435.56,
+            "max_drawdown": 764.3171,
+            "max_drawdown_pct": 7.643171,
+            "modeled_friction": 44.2896,
+            "open_entry": 0.0,
+            "open_quantity": 0.0,
+            "orders": 22,
+            "realized_gross_pnl": 1447.86,
+            "return_pct": 14.035704,
+            "total_net_pnl": 1403.5704,
+            "unrealized_gross_pnl": 0.0,
+            "win_rate_pct": 54.5455,
+            "winning_trades": 6
+          },
+          "symbol": "TSLA"
+        }
+      ]
+    },
+    "tuning_run_count": 981
+  },
+  "pulse_edge": {
+    "classification": "partial_native_coordination_replay",
+    "excluded": [
+      "SignalEngineEnhanced chart-pattern analyzer",
+      "HTTP transport timing",
+      "live broker acknowledgements"
+    ],
+    "included": [
+      "SignalEngine",
+      "DecisionEngine",
+      "Pulse Edge buy/sell methods",
+      "Pulse ticker risk settings"
+    ],
+    "runs": [
+      {
+        "bar_count": 833,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -0.5,
+          "id": "avg14_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "edge_decisions": {
+          "buy": 231,
+          "enable_trailing_stop": 1,
+          "hold": 349,
+          "stop_buying": 4,
+          "tighten_stop": 248
+        },
+        "execution_order": "edge_first",
+        "final_ticker_state": {
+          "auto_stop_reason": "edge_tighten_stop",
+          "buying_paused": true,
+          "enabled": false,
+          "trailing_enabled": true,
+          "trailing_percent": 0.7331226194589033
+        },
+        "handoffs": {
+          "accepted": 256,
+          "rejected": 228
+        },
+        "metrics": {
+          "closed_trades": 4,
+          "final_mark": 750.72,
+          "max_drawdown": 483.2669,
+          "max_drawdown_pct": 4.832669,
+          "modeled_friction": 20.0023,
+          "open_entry": 737.17,
+          "open_quantity": 13.5654,
+          "orders": 9,
+          "realized_gross_pnl": -172.77,
+          "return_pct": -0.089613,
+          "total_net_pnl": -8.9613,
+          "unrealized_gross_pnl": 183.811,
+          "win_rate_pct": 25.0,
+          "winning_trades": 1
+        },
+        "symbol": "SPY"
+      },
+      {
+        "bar_count": 833,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -0.5,
+          "id": "avg14_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "edge_decisions": {
+          "buy": 65,
+          "enable_trailing_stop": 1,
+          "hold": 518,
+          "stop_buying": 3,
+          "tighten_stop": 246
+        },
+        "execution_order": "pulse_first",
+        "final_ticker_state": {
+          "auto_stop_reason": "edge_tighten_stop",
+          "buying_paused": true,
+          "enabled": false,
+          "trailing_enabled": true,
+          "trailing_percent": 0.5441321024459126
+        },
+        "handoffs": {
+          "accepted": 252,
+          "rejected": 63
+        },
+        "metrics": {
+          "closed_trades": 2,
+          "final_mark": 750.72,
+          "max_drawdown": 513.8508,
+          "max_drawdown_pct": 5.138508,
+          "modeled_friction": 11.965,
+          "open_entry": 732.52,
+          "open_quantity": 13.6515,
+          "orders": 5,
+          "realized_gross_pnl": -423.65,
+          "return_pct": -1.871583,
+          "total_net_pnl": -187.1583,
+          "unrealized_gross_pnl": 248.4566,
+          "win_rate_pct": 0.0,
+          "winning_trades": 0
+        },
+        "symbol": "SPY"
+      },
+      {
+        "bar_count": 833,
+        "config": {
+          "avg_days": 30,
+          "buy_offset": -0.5,
+          "id": "avg30_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "edge_decisions": {
+          "buy": 260,
+          "enable_trailing_stop": 1,
+          "hold": 337,
+          "stop_buying": 2,
+          "tighten_stop": 233
+        },
+        "execution_order": "edge_first",
+        "final_ticker_state": {
+          "auto_stop_reason": "edge_tighten_stop",
+          "buying_paused": true,
+          "enabled": false,
+          "trailing_enabled": true,
+          "trailing_percent": 0.8036402352027711
+        },
+        "handoffs": {
+          "accepted": 238,
+          "rejected": 258
+        },
+        "metrics": {
+          "closed_trades": 1,
+          "final_mark": 705.94,
+          "max_drawdown": 748.2989,
+          "max_drawdown_pct": 7.482989,
+          "modeled_friction": 7.908,
+          "open_entry": 721.43,
+          "open_quantity": 13.8614,
+          "orders": 3,
+          "realized_gross_pnl": -245.45,
+          "return_pct": -4.680709,
+          "total_net_pnl": -468.0709,
+          "unrealized_gross_pnl": -214.713,
+          "win_rate_pct": 0.0,
+          "winning_trades": 0
+        },
+        "symbol": "QQQ"
+      },
+      {
+        "bar_count": 833,
+        "config": {
+          "avg_days": 30,
+          "buy_offset": -0.5,
+          "id": "avg30_buym0p5_sell6p0_stopm2p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -2.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "edge_decisions": {
+          "buy": 260,
+          "enable_trailing_stop": 1,
+          "hold": 337,
+          "stop_buying": 3,
+          "tighten_stop": 232
+        },
+        "execution_order": "pulse_first",
+        "final_ticker_state": {
+          "auto_stop_reason": "edge_tighten_stop",
+          "buying_paused": true,
+          "enabled": false,
+          "trailing_enabled": true,
+          "trailing_percent": 0.8036402352027711
+        },
+        "handoffs": {
+          "accepted": 238,
+          "rejected": 258
+        },
+        "metrics": {
+          "closed_trades": 1,
+          "final_mark": 705.94,
+          "max_drawdown": 748.2989,
+          "max_drawdown_pct": 7.482989,
+          "modeled_friction": 7.908,
+          "open_entry": 721.43,
+          "open_quantity": 13.8614,
+          "orders": 3,
+          "realized_gross_pnl": -245.45,
+          "return_pct": -4.680709,
+          "total_net_pnl": -468.0709,
+          "unrealized_gross_pnl": -214.713,
+          "win_rate_pct": 0.0,
+          "winning_trades": 0
+        },
+        "symbol": "QQQ"
+      },
+      {
+        "bar_count": 833,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -1.5,
+          "id": "avg14_buym1p5_sell6p0_stopm8p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -8.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "edge_decisions": {
+          "buy": 154,
+          "emergency_exit": 48,
+          "enable_trailing_stop": 1,
+          "hold": 478,
+          "stop_buying": 14,
+          "tighten_stop": 138
+        },
+        "execution_order": "edge_first",
+        "final_ticker_state": {
+          "auto_stop_reason": "edge_tighten_stop",
+          "buying_paused": true,
+          "enabled": false,
+          "trailing_enabled": true,
+          "trailing_percent": 1.4487895798718398
+        },
+        "handoffs": {
+          "accepted": 206,
+          "rejected": 149
+        },
+        "metrics": {
+          "closed_trades": 7,
+          "final_mark": 391.06,
+          "max_drawdown": 1661.8577,
+          "max_drawdown_pct": 16.618577,
+          "modeled_friction": 27.8039,
+          "open_entry": 0.0,
+          "open_quantity": 0.0,
+          "orders": 14,
+          "realized_gross_pnl": -980.62,
+          "return_pct": -10.084239,
+          "total_net_pnl": -1008.4239,
+          "unrealized_gross_pnl": 0.0,
+          "win_rate_pct": 28.5714,
+          "winning_trades": 2
+        },
+        "symbol": "TSLA"
+      },
+      {
+        "bar_count": 833,
+        "config": {
+          "avg_days": 14,
+          "buy_offset": -1.5,
+          "id": "avg14_buym1p5_sell6p0_stopm8p0_trailoff",
+          "sell_offset": 6.0,
+          "stop_offset": -8.0,
+          "trailing_enabled": false,
+          "trailing_percent": 0.0
+        },
+        "edge_decisions": {
+          "buy": 154,
+          "emergency_exit": 41,
+          "enable_trailing_stop": 1,
+          "hold": 480,
+          "stop_buying": 14,
+          "tighten_stop": 143
+        },
+        "execution_order": "pulse_first",
+        "final_ticker_state": {
+          "auto_stop_reason": "edge_tighten_stop",
+          "buying_paused": true,
+          "enabled": false,
+          "trailing_enabled": true,
+          "trailing_percent": 1.4487895798718398
+        },
+        "handoffs": {
+          "accepted": 204,
+          "rejected": 149
+        },
+        "metrics": {
+          "closed_trades": 7,
+          "final_mark": 391.06,
+          "max_drawdown": 1661.8577,
+          "max_drawdown_pct": 16.618577,
+          "modeled_friction": 27.7793,
+          "open_entry": 0.0,
+          "open_quantity": 0.0,
+          "orders": 14,
+          "realized_gross_pnl": -1103.63,
+          "return_pct": -11.314093,
+          "total_net_pnl": -1131.4093,
+          "unrealized_gross_pnl": 0.0,
+          "win_rate_pct": 28.5714,
+          "winning_trades": 2
+        },
+        "symbol": "TSLA"
+      }
+    ]
+  },
+  "repositories": {
+    "archive": "ee02a4258c56e4c2a4a69db64ced648dc392f221",
+    "chain": "4db67e73bdecd975c1981c542f747e8a04759c97",
+    "edge": "e3214887928c70de53d71203fae3d7d0bbc674f9",
+    "iron": "d50436eae5009011c9e1104d8ca725f0e60236fd",
+    "pulse": "9541f20b58830cd5967bd6983608983679348ca4"
+  },
+  "runner": {
+    "path": "scripts/run_native_profitability_study.py",
+    "sha256": "2e64931e03dab829643595896cb84e20cf46a3c037a2157a607470652a10ea3e"
+  },
+  "schema_version": "sentinel.archive.native_profitability_study.v1",
+  "study_id": "sentinel-native-profitability-2026-07-17",
+  "verdict": "Pulse's per-symbol April\u2013May-selected settings ended with positive mark-to-market value on all 3 held-out June\u2013July tickers ($1603.76 combined after modeled friction). Only QQQ and TSLA had positive realized gross P&L; SPY's positive ending depended on an open gain after one closed loss. This is encouraging but insufficient evidence of reliable profitability. Chain and Iron cannot yet be ranked because neither initiated a candle-derived order.",
+  "windows": {
+    "held_out_validation": {
+      "end_exclusive": "2026-07-17T00:00:00Z",
+      "start": "2026-06-01T00:00:00Z"
+    },
+    "tuning": {
+      "end_exclusive": "2026-06-01T00:00:00Z",
+      "start": "2026-04-01T00:00:00Z"
+    }
+  }
+}
