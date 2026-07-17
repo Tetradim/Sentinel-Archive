@@ -14,6 +14,41 @@ export type SimulationConfig = {
   signal_sell_threshold: number;
 };
 
+export type GeneralApiSpec = {
+  name: string;
+  contract_version: string;
+  purpose: string;
+  strategy_logic: string;
+  order_origin_rule: string;
+  replay_visibility_rule: string;
+  interfaces: Record<string, string>;
+};
+
+export type GeneralApiDataset = {
+  dataset_id: string;
+  name: string;
+  data_kind: 'recorded' | 'synthetic';
+  source_name: string;
+  checksum_sha256: string;
+  symbols: string[];
+  bar_count: number;
+  first_timestamp: string;
+  last_timestamp: string;
+};
+
+export type GeneralApiRun = {
+  run_id: string;
+  dataset_id: string;
+  name: string;
+  state: 'ready' | 'running' | 'stopped' | 'completed';
+  speed: number;
+  loop: boolean;
+  index: number;
+  current_timestamp?: string | null;
+  participant_ids: string[];
+  latest_sequence: number;
+};
+
 export type Position = {
   symbol: string;
   quantity: number;
@@ -513,6 +548,23 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
 }
 
 export const api = {
+  generalSpec: () => requestJson<GeneralApiSpec>('/api/general/spec'),
+  generalDatasets: () => requestJson<{ datasets: GeneralApiDataset[] }>('/api/general/datasets'),
+  importGeneralDataset: (body: { name: string; csv_text: string; data_kind: 'recorded' | 'synthetic'; source_name: string; source_url?: string | null; notes?: string; instruments?: Array<Record<string, unknown>> }) =>
+    requestJson<GeneralApiDataset>('/api/general/datasets/import/csv', { method: 'POST', body: JSON.stringify(body) }),
+  generalRuns: () => requestJson<{ runs: GeneralApiRun[] }>('/api/general/runs'),
+  createGeneralRun: (body: { dataset_id: string; name: string; speed: number; loop: boolean }) =>
+    requestJson<GeneralApiRun>('/api/general/runs', { method: 'POST', body: JSON.stringify(body) }),
+  startGeneralRun: (runId: string, reset = false) =>
+    requestJson<GeneralApiRun>(`/api/general/runs/${encodeURIComponent(runId)}/start`, { method: 'POST', body: JSON.stringify({ reset }) }),
+  stepGeneralRun: (runId: string) =>
+    requestJson<GeneralApiRun>(`/api/general/runs/${encodeURIComponent(runId)}/step`, { method: 'POST', body: '{}' }),
+  stopGeneralRun: (runId: string) =>
+    requestJson<GeneralApiRun>(`/api/general/runs/${encodeURIComponent(runId)}/stop`, { method: 'POST', body: '{}' }),
+  generalParticipants: (runId: string) =>
+    requestJson<{ participants: Array<Record<string, unknown>> }>(`/api/general/runs/${encodeURIComponent(runId)}/participants`),
+  generalReport: (runId: string) =>
+    requestJson<Record<string, unknown>>(`/api/general/runs/${encodeURIComponent(runId)}/report`),
   state: () => requestJson<SimulationSnapshot>('/api/simulation/state'),
   updateConfig: (config: SimulationConfig) =>
     requestJson<SimulationSnapshot>('/api/simulation/config', {

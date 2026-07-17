@@ -44,6 +44,9 @@ import {
   type DiscordTestResult,
   type ExportRecord,
   type FuturesContractSpec,
+  type GeneralApiDataset,
+  type GeneralApiRun,
+  type GeneralApiSpec,
   type MarketDataFetchResult,
   type MarketDataProviderInfo,
   type MarketPriceBar,
@@ -105,7 +108,7 @@ const sampleDerivativesRequest = JSON.stringify({
   funding_events: [], orders: [], stop_loss_pct: 1, take_profit_pct: 2, trailing_stop_pct: 0.75, close_final_position: true,
 }, null, 2);
 
-type WorkflowKey = 'builder' | 'futures' | 'history' | 'detail' | 'compare' | 'exports' | 'bots' | 'replay';
+type WorkflowKey = 'builder' | 'futures' | 'history' | 'detail' | 'compare' | 'exports' | 'bots' | 'general' | 'replay';
 type Tone = 'good' | 'warn' | 'bad' | 'neutral' | 'purple' | 'gold';
 
 type RankedReport = {
@@ -433,6 +436,19 @@ export function App() {
   const [derivativesReport, setDerivativesReport] = React.useState<DerivativesReport | null>(null);
   const [differentialReport, setDifferentialReport] = React.useState<DifferentialAuditReport | null>(null);
 
+  const [generalSpec, setGeneralSpec] = React.useState<GeneralApiSpec | null>(null);
+  const [generalDatasets, setGeneralDatasets] = React.useState<GeneralApiDataset[]>([]);
+  const [generalRuns, setGeneralRuns] = React.useState<GeneralApiRun[]>([]);
+  const [generalDatasetId, setGeneralDatasetId] = React.useState('');
+  const [generalRunId, setGeneralRunId] = React.useState('');
+  const [generalDatasetName, setGeneralDatasetName] = React.useState('Recorded market day');
+  const [generalSourceName, setGeneralSourceName] = React.useState('operator supplied CSV');
+  const [generalCsvText, setGeneralCsvText] = React.useState('');
+  const [generalRunName, setGeneralRunName] = React.useState('Multi-bot replay');
+  const [generalSpeed, setGeneralSpeed] = React.useState(1);
+  const [generalLoop, setGeneralLoop] = React.useState(false);
+  const [generalDetails, setGeneralDetails] = React.useState<Record<string, unknown> | null>(null);
+
   const historyPageSize = 10;
 
   const refreshLegacy = React.useCallback(async () => {
@@ -510,6 +526,24 @@ export function App() {
     }, 1500);
     return () => window.clearInterval(id);
   }, [workflow, refreshLegacy]);
+
+  const refreshGeneral = React.useCallback(async () => {
+    const [spec, datasetResponse, runResponse] = await Promise.all([
+      api.generalSpec(),
+      api.generalDatasets(),
+      api.generalRuns(),
+    ]);
+    setGeneralSpec(spec);
+    setGeneralDatasets(datasetResponse.datasets);
+    setGeneralRuns(runResponse.runs);
+    setGeneralDatasetId((current) => current || datasetResponse.datasets[0]?.dataset_id || '');
+    setGeneralRunId((current) => current || runResponse.runs[0]?.run_id || '');
+  }, []);
+
+  React.useEffect(() => {
+    if (workflow !== 'general') return;
+    refreshGeneral().catch((err) => setArchiveError(err instanceof Error ? err.message : String(err)));
+  }, [workflow, refreshGeneral]);
 
   async function run<T>(label: string, fn: () => Promise<T>) {
     setError('');
@@ -708,6 +742,7 @@ export function App() {
     { key: 'compare', label: 'Ranks', icon: <Trophy size={22} />, help: 'Compare reports across runs' },
     { key: 'exports', label: 'Exports', icon: <Download size={22} />, help: 'JSON, CSV, datasets' },
     { key: 'bots', label: 'Bots', icon: <Bot size={22} />, help: 'Bot-suite evidence' },
+    { key: 'general', label: 'General API', icon: <PlugZap size={22} />, help: 'Multi-bot replay broker and connection contract' },
     { key: 'replay', label: 'Replay', icon: <RotateCcw size={22} />, help: 'Legacy simulator and recorder' },
   ];
 
@@ -805,6 +840,7 @@ export function App() {
           {workflow === 'compare' ? renderCompareWorkflow() : null}
           {workflow === 'exports' ? renderExportsWorkflow() : null}
           {workflow === 'bots' ? renderBotsWorkflow() : null}
+          {workflow === 'general' ? renderGeneralApiWorkflow() : null}
           {workflow === 'replay' ? renderReplayWorkflow() : null}
         </main>
       </section>
@@ -1422,6 +1458,104 @@ export function App() {
         <section className="glass-panel panel-card span-6">
           <PanelHeader icon={<MessageSquare size={18} />} title="Recorded Alerts" subtitle="Latest parser output and drift flags." />
           <AlertsTable alerts={recorderAlerts} driftByAlert={driftByAlert} />
+        </section>
+      </div>
+    );
+  }
+
+  function renderGeneralApiWorkflow() {
+    const selectedRun = generalRuns.find((item) => item.run_id === generalRunId) || null;
+    return (
+      <div className="workflow-grid general-api-layout">
+        <section className="glass-panel panel-card span-5">
+          <PanelHeader icon={<PlugZap size={18} />} title="General API Contract" subtitle="The common connection used by every Sentinel bot." />
+          <div className="stack">
+            <div className="metric-grid compact-metrics">
+              <Metric label="Contract" value={generalSpec?.contract_version || 'archive.general.v1'} tone="purple" />
+              <Metric label="Strategy logic" value={generalSpec?.strategy_logic || 'none'} tone="good" />
+            </div>
+            <p className="boundary-callout"><strong>Archive never decides to trade.</strong> It releases recorded candles, accepts broker-shaped orders created by connected bots, and records the results.</p>
+            <p className="path-readout">http://127.0.0.1:9200/api/general</p>
+            <pre className="json-preview short">{generalSpec ? JSON.stringify(generalSpec.interfaces, null, 2) : 'Loading contract…'}</pre>
+            <button type="button" onClick={() => archiveRun('Refreshing General API', refreshGeneral)}><RefreshCw size={15} /> Refresh</button>
+          </div>
+        </section>
+
+        <section className="glass-panel panel-card span-7">
+          <PanelHeader icon={<FileUp size={18} />} title="Recorded Dataset" subtitle="Import the exact CSV market data that connected bots will receive in chronological order." />
+          <div className="ticket-grid two-col">
+            <label className="field">Dataset name<input value={generalDatasetName} onChange={(event) => setGeneralDatasetName(event.target.value)} /></label>
+            <label className="field">Source name<input value={generalSourceName} onChange={(event) => setGeneralSourceName(event.target.value)} /></label>
+            <label className="file-button"><Upload size={15} /> Load CSV<input type="file" accept=".csv,text/csv" onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              setGeneralDatasetName(file.name.replace(/\.[^.]+$/, ''));
+              setGeneralCsvText(await file.text());
+            }} /></label>
+            <button className="primary-btn" type="button" disabled={!generalCsvText.trim()} onClick={() => archiveRun('Importing General API dataset', async () => {
+              const dataset = await api.importGeneralDataset({
+                name: generalDatasetName,
+                csv_text: generalCsvText,
+                data_kind: 'recorded',
+                source_name: generalSourceName,
+                notes: 'Imported through Archive General API UI',
+              });
+              setGeneralDatasetId(dataset.dataset_id);
+              await refreshGeneral();
+            })}><Upload size={15} /> Import Recorded Data</button>
+          </div>
+          <textarea className="general-api-csv" value={generalCsvText} onChange={(event) => setGeneralCsvText(event.target.value)} spellCheck={false} placeholder="Load or paste a real recorded-market CSV. No sample or synthetic candles are prefilled." />
+          <div className="dataset-list general-api-list">
+            {generalDatasets.map((dataset) => (
+              <button className={`dataset-card ${dataset.dataset_id === generalDatasetId ? 'selected' : ''}`} type="button" key={dataset.dataset_id} onClick={() => setGeneralDatasetId(dataset.dataset_id)}>
+                <strong>{dataset.name}</strong><span>{dataset.symbols.join(', ')} · {dataset.bar_count} candles · {dataset.data_kind}</span><em>{dataset.dataset_id}</em>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="glass-panel panel-card span-5">
+          <PanelHeader icon={<RadioTower size={18} />} title="Replay Run" subtitle="Create one run, then point multiple bots at the same run ID." />
+          <div className="stack">
+            <label className="field">Dataset<select value={generalDatasetId} onChange={(event) => setGeneralDatasetId(event.target.value)}><option value="">Select dataset</option>{generalDatasets.map((dataset) => <option value={dataset.dataset_id} key={dataset.dataset_id}>{dataset.name}</option>)}</select></label>
+            <label className="field">Run name<input value={generalRunName} onChange={(event) => setGeneralRunName(event.target.value)} /></label>
+            <NumberField label="Replay speed" value={generalSpeed} step={1} onChange={setGeneralSpeed} />
+            <label className="check-card"><input type="checkbox" checked={generalLoop} onChange={(event) => setGeneralLoop(event.target.checked)} /><span>Loop replay</span></label>
+            <button className="primary-btn" type="button" disabled={!generalDatasetId} onClick={() => archiveRun('Creating General API run', async () => {
+              const created = await api.createGeneralRun({ dataset_id: generalDatasetId, name: generalRunName, speed: generalSpeed, loop: generalLoop });
+              setGeneralRunId(created.run_id);
+              await refreshGeneral();
+            })}><Play size={15} /> Create Run</button>
+          </div>
+        </section>
+
+        <section className="glass-panel panel-card span-7">
+          <PanelHeader icon={<Activity size={18} />} title="Run Control and Evidence" subtitle="Bots register themselves; Archive displays their identities, activity, accounts, and PnL." />
+          <div className="general-run-grid">
+            {generalRuns.map((runItem) => (
+              <button className={`suite-card ${runItem.run_id === generalRunId ? 'selected' : ''}`} type="button" key={runItem.run_id} onClick={() => setGeneralRunId(runItem.run_id)}>
+                <strong>{runItem.name}</strong><span>{runItem.state} · candle {runItem.index} · {runItem.participant_ids.length} bots</span><em>{runItem.run_id}</em>
+              </button>
+            ))}
+          </div>
+          {selectedRun ? <>
+            <div className="button-row">
+              <button className="primary-btn" type="button" onClick={() => archiveRun('Starting replay', async () => { await api.startGeneralRun(selectedRun.run_id); await refreshGeneral(); })}><Play size={15} /> Start</button>
+              <button type="button" onClick={() => archiveRun('Releasing one candle', async () => { await api.stepGeneralRun(selectedRun.run_id); await refreshGeneral(); })}><SkipForward size={15} /> Step</button>
+              <button type="button" onClick={() => archiveRun('Stopping replay', async () => { await api.stopGeneralRun(selectedRun.run_id); await refreshGeneral(); })}><Pause size={15} /> Stop</button>
+              <button type="button" onClick={() => archiveRun('Loading run evidence', async () => {
+                const [participants, report] = await Promise.all([api.generalParticipants(selectedRun.run_id), api.generalReport(selectedRun.run_id)]);
+                setGeneralDetails({ run: selectedRun, participants: participants.participants, report });
+              })}><ClipboardList size={15} /> Load Evidence</button>
+            </div>
+            <div className="metric-grid compact-metrics">
+              <Metric label="State" value={selectedRun.state} tone={selectedRun.state === 'running' ? 'good' : 'neutral'} />
+              <Metric label="Candle" value={number(selectedRun.index, 0)} />
+              <Metric label="Bots" value={number(selectedRun.participant_ids.length, 0)} tone="purple" />
+              <Metric label="Events" value={number(selectedRun.latest_sequence, 0)} />
+            </div>
+          </> : <EmptyState label="Import a recorded dataset and create a replay run." />}
+          <pre className="json-preview large">{generalDetails ? JSON.stringify(generalDetails, null, 2) : 'Load evidence after bots connect and react to replayed candles.'}</pre>
         </section>
       </div>
     );
