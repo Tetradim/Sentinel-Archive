@@ -34,9 +34,8 @@ C:\Users\Lite OS\Documents\Codex\2026-06-12\c-users-lite-os-openclaw-workspace\w
 | Market state | Maintains current replay prices per symbol and exposes quote/price endpoints. |
 | Simulated account | Tracks cash, equity, buying power, open positions, average entry, current price, P&L, trailing state, and day P&L. |
 | Execution assumptions | Configurable starting cash, quantity, allocation cap, fill ratio, slippage, commission, confidence threshold, regular stop, trailing stop, and take-profit rules. |
-| Futures audit engine | Deterministic listed-future and crypto-perpetual replay with run/per-signal leverage, initial/maintenance margin, liquidation, potential debt, funding, commissions, exchange fees, bid/ask spread, slippage, liquidity-limited fills, order rejection, gaps, staged partial targets, trailing activation, time exits, OCO events, tick sizes, and contract multipliers. |
+| Futures audit engine | Deterministic listed-future and crypto-perpetual replay with leverage, initial/maintenance margin, liquidation, potential debt, funding, commissions, exchange fees, bid/ask spread, slippage, liquidity-limited fills, order rejection, gaps, brackets, trailing stops, OCO events, tick sizes, and contract multipliers. |
 | Differential audit | Replays Iron, Chain, Combination, or custom order streams against one immutable dataset and reports the first execution/P&L/safety divergence plus a combined verdict. |
-| Native profitability studies | Executes Iron trend/volatility/carry/composite strategies, Chain recorded-signal or native EMA/RSI/ATR logic, and Combination routed sources with native risk preflight across deterministic walk-forward, bootstrap, benchmark, and cost-stress analysis. |
 | Market data adapters | Normalizes free yfinance, Stooq, Alpaca IEX, Alpha Vantage, Twelve Data, Binance Futures, Bybit Futures, BitUnix Futures, and Coinbase data into fingerprinted datasets. |
 | Handoff contract | Accepts `edge.pulse.handoff.v1` through native and Pulse-compatible endpoints. |
 | Action coverage | Handles buy, sell, DCA, regular stop, trailing stop, tighten trailing stop, opening trailing stop, stop all, emergency exit, and stop buying. |
@@ -50,7 +49,7 @@ C:\Users\Lite OS\Documents\Codex\2026-06-12\c-users-lite-os-openclaw-workspace\w
 | Market capture | Imports option and stock price CSVs, optionally enriches with yfinance, snapshots alert-time option and stock prices, and calculates drift. |
 | Sentinel Echo replay | Publishes joined replay events for Sentinel Echo and writes JSONL test-run manifests. |
 | Control panel | React/Vite dashboard for replay, simulated handoffs, recorder setup, imports, exports, Sentinel Echo replay, positions, and event tape. |
-| Futures Lab UI | Fetches market data, applies editable contract templates, runs deterministic audits and native strategy profitability studies, and exposes Iron/Chain/Combination execution evidence. |
+| Futures Lab UI | Fetches market data, applies editable contract templates, runs one-bot audits or three-layer Iron/Chain/Combination comparisons, and exposes execution evidence. |
 | Windows launcher | Starts FastAPI, optionally rebuilds UI, opens a dedicated browser profile, and stops the process when the browser closes. |
 
 ## Architecture

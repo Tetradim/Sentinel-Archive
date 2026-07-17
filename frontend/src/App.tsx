@@ -52,7 +52,6 @@ import {
   type ParsedAlert,
   type PresetCatalog,
   type PriceDriftEvent,
-  type ProfitabilityStudyReport,
   type RecorderSettings,
   type RecorderStatus,
   type SentinelEchoReplayResponse,
@@ -104,38 +103,6 @@ const sampleDerivativesRequest = JSON.stringify({
     { timestamp: '2026-07-01T13:31:00Z', symbol: 'MES', open: 5001, high: 5008, low: 4999, close: 5006, volume: 900 },
   ],
   funding_events: [], orders: [], stop_loss_pct: 1, take_profit_pct: 2, trailing_stop_pct: 0.75, close_final_position: true,
-}, null, 2);
-
-const sampleProfitabilityConfig = JSON.stringify({
-  name: 'Iron native walk-forward profitability evidence',
-  strategy: {
-    profile: 'iron_trend',
-    require_native: true,
-    parameters: { lookbacks: [20, 60, 120], threshold: 0, quantity: 1 },
-  },
-  signals: [],
-  validation: {
-    minimum_train_bars: 120,
-    test_bars_per_fold: 60,
-    folds: 3,
-    minimum_out_of_sample_bars: 120,
-    minimum_closed_trades: 20,
-    bootstrap_samples: 1000,
-    confidence_level: 0.95,
-    minimum_probability_of_profit: 0.95,
-    minimum_sharpe_ratio: 0.5,
-    maximum_drawdown_pct: 25,
-    require_positive_cost_stress: true,
-    require_benchmark_outperformance: true,
-    require_data_provenance: false,
-    deterministic_seed: 1729,
-  },
-  cost_stresses: [
-    { name: 'base' },
-    { name: 'double_fees', fee_multiplier: 2, commission_multiplier: 2 },
-    { name: 'triple_slippage', slippage_multiplier: 3 },
-    { name: 'wide_spread', spread_multiplier: 3 },
-  ],
 }, null, 2);
 
 type WorkflowKey = 'builder' | 'futures' | 'history' | 'detail' | 'compare' | 'exports' | 'bots' | 'replay';
@@ -458,15 +425,13 @@ export function App() {
   const [marketProvider, setMarketProvider] = React.useState('yfinance');
   const [marketSymbol, setMarketSymbol] = React.useState('MES=F');
   const [marketAssetClass, setMarketAssetClass] = React.useState<AssetClass>('futures');
-  const [marketInterval, setMarketInterval] = React.useState('1d');
-  const [marketStart, setMarketStart] = React.useState(() => new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+  const [marketInterval, setMarketInterval] = React.useState('5m');
+  const [marketStart, setMarketStart] = React.useState('');
   const [marketEnd, setMarketEnd] = React.useState('');
   const [marketDataResult, setMarketDataResult] = React.useState<MarketDataFetchResult | null>(null);
   const [derivativesRequestText, setDerivativesRequestText] = React.useState(sampleDerivativesRequest);
   const [derivativesReport, setDerivativesReport] = React.useState<DerivativesReport | null>(null);
   const [differentialReport, setDifferentialReport] = React.useState<DifferentialAuditReport | null>(null);
-  const [profitabilityConfigText, setProfitabilityConfigText] = React.useState(sampleProfitabilityConfig);
-  const [profitabilityReport, setProfitabilityReport] = React.useState<ProfitabilityStudyReport | null>(null);
 
   const historyPageSize = 10;
 
@@ -1009,15 +974,6 @@ export function App() {
   function renderFuturesWorkflow() {
     const combined = differentialReport?.combined_assessment;
     const metrics = derivativesReport?.metrics;
-    const selectProfitabilityProfile = (profile: string, botId: 'iron' | 'chain' | 'combination', parameters: Record<string, unknown>) => {
-      const config = JSON.parse(profitabilityConfigText) as Record<string, unknown>;
-      config.name = `${botId} ${profile} profitability evidence`;
-      config.strategy = { profile, require_native: true, parameters };
-      setProfitabilityConfigText(JSON.stringify(config, null, 2));
-      const request = JSON.parse(derivativesRequestText) as Record<string, unknown>;
-      request.bot_id = botId;
-      setDerivativesRequestText(JSON.stringify(request, null, 2));
-    };
     return (
       <div className="workflow-grid">
         <section className="glass-panel panel-card span-5">
@@ -1049,15 +1005,7 @@ export function App() {
               const requestSymbol = String(request.symbol || marketDataResult.symbol).toUpperCase();
               request.bars = marketDataResult.bars.map((bar) => ({ ...bar, symbol: requestSymbol }));
               request.funding_events = marketDataResult.funding_events;
-              request.metadata = {
-                ...(request.metadata as Record<string, unknown> || {}),
-                dataset_id: marketDataResult.dataset_id,
-                source_fingerprint: marketDataResult.fingerprint,
-                data_provider: marketDataResult.provider,
-                data_interval: marketDataResult.interval,
-                source_symbol: marketDataResult.symbol,
-                contract_series_type: marketDataResult.symbol.endsWith('=F') ? 'continuous_unverified_roll' : (request.contract && (request.contract as Record<string, unknown>).instrument_type === 'listed_future' ? 'specific_contract' : undefined),
-              };
+              request.metadata = { ...(request.metadata as Record<string, unknown> || {}), dataset_id: marketDataResult.dataset_id, source_fingerprint: marketDataResult.fingerprint };
               setDerivativesRequestText(JSON.stringify(request, null, 2));
             }}>Use in Audit</button>
           </div>
@@ -1106,45 +1054,6 @@ export function App() {
               setDerivativesReport(null);
             })}>Run 3-Layer Comparison</button>
           </div>
-        </section>
-
-        <section className="glass-panel panel-card span-12">
-          <PanelHeader icon={<Trophy size={18} />} title="Native Strategy Profitability Study" subtitle="Bot strategy execution, anchored walk-forward folds, bootstrap confidence, identical-cost benchmark, and adverse cost scenarios." />
-          <p className="panel-copy">Iron exposes native trend, volatility, carry, and composite logic. Chain can run either its native EMA/RSI/ATR auto strategy or timestamped recorded signals. Combination routes either family and keeps the inherited source visible.</p>
-          <div className="chip-stack">
-            <button className="chip-btn" type="button" onClick={() => selectProfitabilityProfile('iron_trend', 'iron', { lookbacks: [20, 60, 120], threshold: 0, sizing_mode: 'fixed', quantity: 1 })}>Iron Trend</button>
-            <button className="chip-btn" type="button" onClick={() => selectProfitabilityProfile('iron_volatility_trend', 'iron', { lookbacks: [20, 60, 120], volatility_lookback: 60, sizing_mode: 'volatility_target', target_risk_fraction: 0.01, max_contracts: 20 })}>Iron Vol Trend</button>
-            <button className="chip-btn" type="button" onClick={() => selectProfitabilityProfile('iron_carry', 'iron', { curve_snapshots: [] })}>Iron Carry</button>
-            <button className="chip-btn" type="button" onClick={() => selectProfitabilityProfile('iron_composite', 'iron', { lookbacks: [20, 60, 120], trend_weight: 0.7, carry_weight: 0.3, curve_snapshots: [] })}>Iron Composite</button>
-            <button className="chip-btn" type="button" onClick={() => selectProfitabilityProfile('chain_auto_structure', 'chain', { fast_ema: 20, slow_ema: 50, risk_pct: 1, allow_short: true, stop_atr_multiple: 1.6, target_atr_multiple: 2.6, max_bars: 48 })}>Chain Auto</button>
-            <button className="chip-btn" type="button" onClick={() => selectProfitabilityProfile('chain_signal_replay', 'chain', { signal_stream_complete: false })}>Chain Signals</button>
-            <button className="chip-btn" type="button" onClick={() => selectProfitabilityProfile('combination_routed', 'combination', { source_profile: 'chain_auto_structure', source_parameters: { fast_ema: 20, slow_ema: 50, risk_pct: 1, allow_short: true } })}>Combination Routed</button>
-          </div>
-          <label className="field">Study configuration (the derivatives request above supplies contract, costs, bars, and funding)
-            <textarea className="data-textarea futures-request" value={profitabilityConfigText} onChange={(event) => setProfitabilityConfigText(event.target.value)} spellCheck={false} />
-          </label>
-          <div className="button-row">
-            <button className="primary-btn" type="button" onClick={() => archiveRun('Running profitability evidence study', async () => {
-              const config = JSON.parse(profitabilityConfigText) as Record<string, unknown>;
-              const baseRequest = JSON.parse(derivativesRequestText) as Record<string, unknown>;
-              const report = await api.runProfitabilityStudy({ ...config, base_request: baseRequest });
-              setProfitabilityReport(report);
-            })}>Run Profitability Study</button>
-          </div>
-          {profitabilityReport ? (
-            <div className="result-stack">
-              <div className="metric-grid compact">
-                <Metric label="Verdict" value={profitabilityReport.verdict} tone={profitabilityReport.verdict === 'profitable' ? 'good' : profitabilityReport.verdict === 'unsafe' || profitabilityReport.verdict === 'not_profitable' ? 'bad' : 'warn'} />
-                <Metric label="OOS return" value={pct(profitabilityReport.metrics?.compounded_return_pct)} tone={Number(profitabilityReport.metrics?.compounded_return_pct) > 0 ? 'good' : 'bad'} />
-                <Metric label="Bootstrap low" value={pct(profitabilityReport.metrics?.bootstrap_return_lower_pct)} tone={Number(profitabilityReport.metrics?.bootstrap_return_lower_pct) > 0 ? 'good' : 'warn'} />
-                <Metric label="Profit probability" value={pct(Number(profitabilityReport.metrics?.probability_of_profit || 0) * 100)} tone={Number(profitabilityReport.metrics?.probability_of_profit) >= 0.95 ? 'good' : 'warn'} />
-                <Metric label="Sharpe" value={number(profitabilityReport.metrics?.annualized_sharpe_ratio)} tone={Number(profitabilityReport.metrics?.annualized_sharpe_ratio) >= 0.5 ? 'good' : 'warn'} />
-                <Metric label="Max drawdown" value={pct(profitabilityReport.metrics?.maximum_drawdown_pct)} tone={Number(profitabilityReport.metrics?.maximum_drawdown_pct) > 25 ? 'bad' : 'good'} />
-              </div>
-              <Warnings warnings={[...profitabilityReport.verdict_reasons, ...profitabilityReport.warnings]} />
-              <pre className="json-preview large">{JSON.stringify({ adapter: profitabilityReport.adapter, data_quality: profitabilityReport.data_quality, folds: profitabilityReport.folds, scenarios: profitabilityReport.scenarios }, null, 2)}</pre>
-            </div>
-          ) : <EmptyState label="Run a study to calculate metrics, caveats, and a profitability classification." />}
         </section>
 
         <section className="glass-panel panel-card span-12">

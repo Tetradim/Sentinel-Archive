@@ -8,14 +8,14 @@ No backtest can prove a futures bot is safe. Bar data cannot reveal the exact or
 
 | Risk or execution behavior | Archive evidence |
 | --- | --- |
-| Leverage and initial margin | Contract margin schedule, run-level or per-signal leverage, reserved margin, available margin, insufficient-margin rejection. |
+| Leverage and initial margin | Contract margin schedule, requested leverage, reserved margin, available margin, insufficient-margin rejection. |
 | Maintenance and liquidation | Per-bar maintenance requirement, isolated/cross liquidation approximation, gap liquidation, liquidation fee, margin-call count. |
 | Account loss beyond equity | Negative wallet/equity is retained as `potential_debt`; it is never clipped to zero. |
 | Costs | Maker/taker or generic basis-point fee, flat trade commission, per-contract commission, per-contract exchange fee, funding, liquidation fee. |
 | Spread and slippage | Recorded bid/ask when supplied; otherwise a configured synthetic spread. Slippage scales with volume participation and rounds against the trader to the next tick. |
 | Liquidity | Maximum bar-volume participation, quantity steps, minimum/maximum quantity, partial fill, IOC remainder cancellation, FOK rejection, missing-volume rejection policy. |
 | Contract economics | Venue, instrument type, multiplier, tick size, quantity step, margin rates, maximum leverage, settlement metadata. |
-| Protective orders | Stop loss, single or staged partial profit targets, trailing stop activation, time exit, automatic bracket/OCO evidence, explicit close orders. |
+| Protective orders | Stop loss, profit target, trailing stop, automatic bracket/OCO cancellation evidence, explicit close orders. |
 | Gaps and ambiguous bars | Configurable gap-through-stop fill and same-bar policies: adverse first, favorable first, OHLC path assumptions, or defer ambiguous execution. |
 | Rejected and unfilled orders | Structured execution events with reason, requested/filled/remaining quantity, and order ID. |
 | Comparable replay | Canonical JSON fingerprints, deterministic run IDs, ordered execution traces, account curves, and pairwise divergence records. |
@@ -31,34 +31,6 @@ No backtest can prove a futures bot is safe. Bar data cannot reveal the exact or
 - ending equity, debt, flags, and minimum safety score.
 
 The combined layer returns `parity_observed`, `review_required`, `investigate_divergence`, or `unsafe`. A parity verdict only means the submitted order streams behaved the same under the submitted assumptions.
-
-## Native strategy profitability studies
-
-`POST /api/archive/profitability/study` generates bot orders from recorded bars and runs non-overlapping, anchored walk-forward folds. It returns results even when source or market-data caveats are present; caveats appear in `warnings`, `data_quality`, and `adapter`. A study is refused only when it cannot execute, such as malformed bars, a missing required native repository, an absent carry curve, or a recorded-signal profile with no signals.
-
-| Profile | Native logic executed | Required inputs |
-| --- | --- | --- |
-| `iron_trend` | `calculate_trend_signal` | Listed-futures bars; configurable lookbacks and fixed or volatility-target sizing. |
-| `iron_volatility_trend` | `calculate_volatility_adjusted_trend_signal` | Listed-futures bars plus a rolling volatility lookback. |
-| `iron_carry` | `calculate_carry_signal` | Timestamped front/deferred `curve_snapshots` with expirations and prices. |
-| `iron_composite` | `combine_weighted_signals` over trend and carry | Bars, curve snapshots, and component weights. |
-| `chain_auto_structure` | Chain's EMA/RSI/ATR auto strategy | Crypto-futures candles; signals execute on the next bar to avoid close-price lookahead. |
-| `chain_signal_replay` | `normalize_signal` and the signal's leverage/bracket lifecycle | Timestamped recorded Chain signals. |
-| `combination_routed` | Any Iron or Chain source plus Combination's native risk preflight | `source_profile`, source parameters, and optional Combination risk limits. |
-
-Iron's native `PricePoint` is daily. When intraday bars are supplied, Archive uses the last completed bar from each prior UTC date for the strategy decision and retains the intraday bars for stop, target, liquidation, funding, and fill simulation. Chain's normalized signals carry per-signal leverage, stops, staged targets, trailing activation, and maximum-hold marks into the replay engine.
-
-Each study reports:
-
-- exact repository commits and strategy source hashes when native repositories are present;
-- out-of-sample folds, trades, return, drawdown, Sharpe, Sortino, and benchmark excess return;
-- deterministic block-bootstrap confidence bounds and probability of profit;
-- base and adverse fee, commission, spread, and slippage scenarios;
-- liquidation, rejection, unfilled-order, and potential-debt evidence.
-
-`POST /api/archive/profitability/compare` ranks studies only when they use the same normalized bars, symbol, and asset class. Archive intentionally does not declare one universal winner between Iron's listed-futures domain and Chain's crypto-futures domain. Combination is reported alongside its source, with the inherited strategy identity preserved.
-
-Missing provider provenance, continuous-contract roll details, or perpetual funding coverage are visible caveats by default and do not suppress the calculated metrics. Set `validation.require_data_provenance` to `true` when a strict dataset requirement is useful.
 
 ## Market data sources
 
@@ -135,16 +107,6 @@ Free data is useful for development and broad behavioral tests. Before treating 
    GET /api/archive/derivatives/runs/{run_id}
    ```
 
-6. Run or compare native profitability studies:
-
-   ```text
-   GET  /api/archive/profitability/adapters
-   POST /api/archive/profitability/study
-   POST /api/archive/profitability/compare
-   GET  /api/archive/profitability/runs
-   GET  /api/archive/profitability/runs/{run_id}
-   ```
-
 ## Contract templates
 
 The built-in ES, MES, NQ, MNQ, CL, MCL, and BTCUSDT entries are editable research defaults, not current broker margin quotes. Contract specifications and broker margins change. Save the exact verified contract snapshot in the request so a future replay retains the assumptions used at the time.
@@ -156,7 +118,7 @@ The built-in ES, MES, NQ, MNQ, CL, MCL, and BTCUSDT entries are editable researc
 - A GTC limit/stop waits across bars until its first fill; a liquidity-limited remainder is cancelled and flagged because the simulator currently holds one aggregate position per instrument.
 - Stop-limit fills require both the stop and limit to be reachable in the same bar; this is a bar-path approximation.
 - Listed-futures variation settlement and changing intraday/overnight broker margin schedules are not inferred. Represent the verified schedule in the saved contract request or split the replay into separately configured sessions.
-- Contract rollover, back-adjustment, and continuous-symbol construction remain data-preparation responsibilities. Archive reports missing roll metadata as a caveat rather than discarding the result.
+- Contract rollover, back-adjustment, and continuous-symbol construction remain data-preparation responsibilities and must be recorded in dataset metadata.
 
 ## Recommended release gate
 
