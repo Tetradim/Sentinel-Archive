@@ -26,6 +26,8 @@ from .chrome_bridge_api import create_chrome_bridge_router
 from .core import SentinelArchive
 from .csv_import import parse_ohlcv_csv
 from .discord_recorder import DiscordRecorder
+from .general_api.router import create_general_api_router
+from .general_api.service import GeneralBrokerService
 from .models import SimulationConfig
 from .market_data.router import create_market_data_router
 from .market_data.service import MarketDataService
@@ -72,6 +74,7 @@ def create_app(
     market_data_service = MarketDataService()
     bot_suite_store = BotSuiteStore(recorder_db_path)
     discord_recorder = DiscordRecorder(recorder_store)
+    general_broker = GeneralBrokerService()
 
     async def playback_loop() -> None:
         while True:
@@ -82,6 +85,11 @@ def create_app(
             else:
                 await asyncio.sleep(0.25)
 
+    async def general_playback_loop() -> None:
+        while True:
+            advanced = general_broker.advance_due_runs()
+            await asyncio.sleep(0.01 if advanced else 0.05)
+
     @asynccontextmanager
     async def lifespan(app_instance: FastAPI):
         await recorder_store.initialize()
@@ -90,13 +98,18 @@ def create_app(
         await archive_dataset_store.initialize()
         await bot_suite_store.initialize()
         app_instance.state.playback_task = asyncio.create_task(playback_loop())
+        app_instance.state.general_playback_task = asyncio.create_task(general_playback_loop())
         try:
             yield
         finally:
             await discord_recorder.stop()
-            task = app_instance.state.playback_task
-            if task:
-                task.cancel()
+            tasks = [app_instance.state.playback_task, app_instance.state.general_playback_task]
+            for task in tasks:
+                if task:
+                    task.cancel()
+            for task in tasks:
+                if not task:
+                    continue
                 try:
                     await task
                 except asyncio.CancelledError:
@@ -111,7 +124,9 @@ def create_app(
     app.state.market_data_service = market_data_service
     app.state.bot_suite_store = bot_suite_store
     app.state.discord_recorder = discord_recorder
+    app.state.general_broker = general_broker
     app.state.playback_task = None
+    app.state.general_playback_task = None
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -127,6 +142,7 @@ def create_app(
     app.include_router(create_bot_suite_router(bot_suite_store), prefix="/api")
     app.include_router(create_bot_event_bus_router(), prefix="/api")
     app.include_router(create_chrome_bridge_router(recorder_store, discord_recorder), prefix="/api")
+    app.include_router(create_general_api_router(general_broker), prefix="/api")
 
     def current_engine() -> SentinelArchive:
         return app.state.engine
@@ -134,6 +150,7 @@ def create_app(
     @app.get("/api/health")
     async def health(sim: SentinelArchive = Depends(current_engine)):
         snapshot = sim.snapshot()
+        general_runs = general_broker.runs()
         return {
             "status": "online",
             "service": "sentinel-archive",
@@ -146,6 +163,14 @@ def create_app(
             "replay": snapshot.replay.model_dump(mode="json"),
             "symbols": sorted(snapshot.current_prices),
             "yfinance": False,
+            "general_api": {
+                "status": "online",
+                "contract_version": "archive.general.v1",
+                "run_count": len(general_runs),
+                "active_run_count": sum(1 for run in general_runs if run.state == "running"),
+                "participant_count": sum(len(run.participant_ids) for run in general_runs),
+                "archive_generated_order_count": 0,
+            },
         }
 
     @app.get("/api/live")

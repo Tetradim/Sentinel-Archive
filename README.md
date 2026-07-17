@@ -1,12 +1,14 @@
 # Sentinel Archive
 
-Local recorded-market simulation, deterministic futures audits, Edge/Pulse contract testing, Discord options alert recording, and Sentinel Echo replay data generation.
+Local recorded-market replay, a vendor-neutral virtual brokerage API, cross-bot observation recording, Discord options alert recording, and Sentinel Echo replay data generation.
 
-This project is intentionally local-first. It can stand in for Sentinel Edge, Sentinel Pulse, or both at the same time, while also recording Discord options alerts and market observations for later bot testing.
+This project is intentionally local-first. A single replay can serve many independently running bots while Archive records their observations, orders, fills, positions, control directives, and results.
 
 ## Safety Boundary
 
 The Sentinel Archive does not connect to brokers and does not place live orders.
+
+Archive contains no trading strategy. It never generates an order from RSI, EMA, a chart pattern, a preset side, or a desired result. General API P&L can exist only after a registered bot submits an attributable broker order. Archive then behaves as the replay market and virtual broker for that order.
 
 The Discord recorder inside this project is also recorder-only. It listens to Discord, parses alerts, stores market context, calculates drift, exports data, and publishes replay events. It does not execute paper trades, simulate option positions, or replace the Sentinel Echo trading bot.
 
@@ -30,17 +32,15 @@ C:\Users\Lite OS\Documents\Codex\2026-06-12\c-users-lite-os-openclaw-workspace\w
 
 | Area | Implemented capability |
 | --- | --- |
+| General API | Vendor-neutral `archive.general.v1` REST and WebSocket contract for bot registration, replay data, orders, accounts, observations, cross-bot directives, and reports. |
+| Shared replay | Pulse, Edge, Iron, Chain, or other clients can subscribe to different symbols in one synchronized multi-symbol replay. Future bars are not exposed through participant routes. |
+| Virtual brokerage | Accepts only bot-submitted market, limit, and stop orders; supports isolated accounts, stock/crypto cash accounting, futures multipliers and margin, partial fills, slippage, commissions, reduce-only orders, OCO cancellation, and immutable order attribution. |
+| Cross-bot controls | Observer bots can publish market-regime, warning, halt, resume, or flatten-request directives. Target bots receive and acknowledge them; Archive records both sides without inventing the decision. |
+| Honest reporting | Reports state dataset provenance, bot order count, fill count, per-bot P&L, directives, and an explicit `archive_generated_order_count: 0`. |
 | Market replay | Imports OHLCV CSV rows, sorts by timestamp, groups same-timestamp bars, and advances deterministically. |
 | Market state | Maintains current replay prices per symbol and exposes quote/price endpoints. |
-| Simulated account | Tracks cash, equity, buying power, open positions, average entry, current price, P&L, trailing state, and day P&L. |
-| Execution assumptions | Configurable starting cash, quantity, allocation cap, fill ratio, slippage, commission, confidence threshold, regular stop, trailing stop, and take-profit rules. |
-| Futures audit engine | Deterministic listed-future and crypto-perpetual replay with leverage, initial/maintenance margin, liquidation, potential debt, funding, commissions, exchange fees, bid/ask spread, slippage, liquidity-limited fills, order rejection, gaps, brackets, trailing stops, OCO events, tick sizes, and contract multipliers. |
-| Differential audit | Replays Iron, Chain, Combination, or custom order streams against one immutable dataset and reports the first execution/P&L/safety divergence plus a combined verdict. |
+| Legacy scenario calculators | The original handoff, backtest, derivatives, and differential calculators remain separate while migration is in progress. They calculate supplied scenarios and are explicitly not evidence that a connected bot recognized or traded a market setup. |
 | Market data adapters | Normalizes free yfinance, Stooq, Alpaca IEX, Alpha Vantage, Twelve Data, Binance Futures, Bybit Futures, BitUnix Futures, and Coinbase data into fingerprinted datasets. |
-| Handoff contract | Accepts `edge.pulse.handoff.v1` through native and Pulse-compatible endpoints. |
-| Action coverage | Handles buy, sell, DCA, regular stop, trailing stop, tighten trailing stop, opening trailing stop, stop all, emergency exit, and stop buying. |
-| Risk exits | Applies replay-bar high/low checks for regular stop, take profit, and trailing stop exits. |
-| Idempotency | Reuses prior handoff results when the same `idempotency_key` arrives again. |
 | Edge facade | Serves Edge-style liveness, automation, decisions, Pulse account, Pulse positions, and handoff schema endpoints. |
 | Pulse facade | Serves Pulse-style health, Edge status, account, tickers, positions, handoff, legacy decision, legacy trailing, and signal scoring endpoints. |
 | Discord recorder | Stores Discord messages, embeds, attachments, parsed alerts, source metadata, sessions, market bars, snapshots, drift events, and exports in SQLite. |
@@ -55,13 +55,14 @@ C:\Users\Lite OS\Documents\Codex\2026-06-12\c-users-lite-os-openclaw-workspace\w
 ## Architecture
 
 ```text
-CSV market data                  Discord alerts
+Recorded market data             Discord alerts
       |                                |
       v                                v
-SentinelArchive              DiscordRecorder
+General Replay API           DiscordRecorder
       |                                |
-      |                         RecordingStore
-      |                         SQLite database
+Virtual Broker                 RecordingStore
+      |                                |
+Bot orders and observations     SQLite database
       |                                |
       |                         snapshots, drift, exports
       |                                |
@@ -73,9 +74,9 @@ SentinelArchive              DiscordRecorder
           Edge/Pulse/Sentinel Echo clients
 ```
 
-The in-memory simulation state and the persistent recorder state are separate:
+The replay/broker state and the persistent recorder state are separate:
 
-- Replay sessions, simulated positions, decisions, and account state are in memory.
+- General API datasets, active runs, bot tokens, virtual orders, fills, positions, and reports are currently in memory for the life of the Archive process.
 - Recorder settings, Discord messages, parsed alerts, market bars, snapshots, drift events, capture sessions, and exports are persisted in SQLite.
 
 ## Quick Start
@@ -189,6 +190,8 @@ The UI sends this key automatically for handoff composer requests.
 ## Control Panel Guide
 
 The FastAPI app serves the built React UI from `dist/`. It polls `/api/simulation/state` and recorder endpoints roughly every 1.5 seconds.
+
+The bot-facing General API is documented in [docs/GENERAL_API.md](docs/GENERAL_API.md). Other bots should connect through that contract instead of asking Archive to run their strategies.
 
 The **Futures** workflow is documented in [docs/DERIVATIVES_AUDIT_LAB.md](docs/DERIVATIVES_AUDIT_LAB.md). It is a research simulator, not a broker connection, exchange risk engine, or guarantee against loss.
 
