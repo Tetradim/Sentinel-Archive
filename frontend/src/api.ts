@@ -179,7 +179,7 @@ export type SentinelEchoTestRun = {
   filters: Record<string, unknown>;
 };
 
-export type AssetClass = 'crypto' | 'stock' | 'options' | 'darkpool' | 'futures_risk';
+export type AssetClass = 'crypto' | 'crypto_futures' | 'stock' | 'options' | 'futures' | 'darkpool' | 'futures_risk';
 export type TradeSide = 'long' | 'short';
 export type BacktestRunKind = 'run' | 'sweep' | 'walk_forward' | 'stress';
 export type OptionAction = 'buy' | 'sell' | 'exit';
@@ -192,6 +192,13 @@ export type MarketPriceBar = {
   low: number;
   close: number;
   volume?: number;
+  bid?: number | null;
+  ask?: number | null;
+  vwap?: number | null;
+  trade_count?: number | null;
+  mark_price?: number | null;
+  index_price?: number | null;
+  open_interest?: number | null;
 };
 
 export type OptionAlert = {
@@ -219,6 +226,12 @@ export type BacktestCostModel = {
   commission_per_trade: number;
   option_fill_price: 'mid' | 'last' | 'bid' | 'ask';
   option_multiplier: number;
+  maker_fee_bps?: number | null;
+  taker_fee_bps?: number | null;
+  spread_bps?: number;
+  commission_per_contract?: number;
+  exchange_fee_per_contract?: number;
+  liquidation_fee_bps?: number;
 };
 
 export type BacktestRunRequest = {
@@ -334,9 +347,74 @@ export type ArchiveDatasetRecord = {
   symbol: string;
   fingerprint: string;
   bars: MarketPriceBar[];
+  funding_events?: FundingEvent[];
+  contract_spec?: FuturesContractSpec | null;
   option_alerts: OptionAlert[];
   option_quotes: OptionQuote[];
   metadata: Record<string, unknown>;
+};
+
+export type FundingEvent = { timestamp: string; rate: number; mark_price?: number | null };
+
+export type FuturesContractSpec = {
+  symbol: string;
+  venue: string;
+  instrument_type: 'listed_future' | 'crypto_perpetual' | 'crypto_delivery';
+  contract_multiplier: number;
+  tick_size: number;
+  quantity_step: number;
+  minimum_quantity: number;
+  maximum_quantity?: number | null;
+  initial_margin_rate: number;
+  maintenance_margin_rate: number;
+  maximum_leverage: number;
+  inverse?: boolean;
+};
+
+export type MarketDataProviderInfo = {
+  provider_id: string;
+  name: string;
+  free_access: boolean;
+  authentication: string;
+  asset_classes: string[];
+  capabilities: string[];
+  limitations: string[];
+  homepage: string;
+};
+
+export type MarketDataFetchResult = {
+  provider: string;
+  symbol: string;
+  asset_class: AssetClass;
+  interval: string;
+  fingerprint: string;
+  bars: MarketPriceBar[];
+  funding_events: FundingEvent[];
+  warnings: string[];
+  metadata: Record<string, unknown>;
+  dataset_id?: string | null;
+};
+
+export type DerivativesReport = {
+  run_id: string;
+  fingerprint: string;
+  bot_id: string;
+  symbol: string;
+  contract: FuturesContractSpec;
+  metrics: Record<string, number | string | string[]>;
+  executions: Array<Record<string, unknown>>;
+  account_curve: Array<Record<string, unknown>>;
+  warnings: string[];
+  assumptions: Record<string, unknown>;
+};
+
+export type DifferentialAuditReport = {
+  audit_id: string;
+  fingerprint: string;
+  name: string;
+  layers: Record<string, DerivativesReport>;
+  divergences: Array<Record<string, unknown>>;
+  combined_assessment: Record<string, unknown>;
 };
 
 export type ArchiveDatasetsResponse = {
@@ -540,6 +618,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  marketDataProviders: () => requestJson<{ providers: MarketDataProviderInfo[] }>('/api/archive/market-data/providers'),
+  fetchMarketData: (body: Record<string, unknown>) =>
+    requestJson<MarketDataFetchResult>('/api/archive/market-data/fetch', { method: 'POST', body: JSON.stringify(body) }),
+  derivativesContracts: () => requestJson<{ contracts: Record<string, FuturesContractSpec>; warning: string }>('/api/archive/derivatives/contracts'),
+  runDerivatives: (body: Record<string, unknown>) =>
+    requestJson<DerivativesReport>('/api/archive/derivatives/run', { method: 'POST', body: JSON.stringify(body) }),
+  compareDerivatives: (body: Record<string, unknown>) =>
+    requestJson<DifferentialAuditReport>('/api/archive/derivatives/compare', { method: 'POST', body: JSON.stringify(body) }),
+  derivativesRuns: (filters: Record<string, string | number | null | undefined> = {}) =>
+    requestJson<{ runs: Array<DerivativesReport | DifferentialAuditReport> }>(`/api/archive/derivatives/runs${queryString(filters)}`),
   suitePlans: (limit = 100) => requestJson<{ plans: SuitePlan[] }>(`/api/archive/bot-suite/plans${queryString({ limit })}`),
   createSuitePlan: (request: SuitePlanRequest) =>
     requestJson<SuitePlan>('/api/archive/bot-suite/plans', {

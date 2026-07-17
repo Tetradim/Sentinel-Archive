@@ -17,6 +17,8 @@ from .archive_datasets import ArchiveDatasetStore, create_archive_datasets_route
 from .archive_presets import create_archive_presets_router
 from .backtesting.router import create_backtest_router
 from .backtesting.store import BacktestStore
+from .backtesting.audit_store import AuditStore
+from .backtesting.derivatives_router import create_derivatives_router
 from .bot_suite.router import create_bot_suite_router
 from .bot_suite.store import BotSuiteStore
 from .bot_event_bus_api import create_bot_event_bus_router
@@ -25,6 +27,8 @@ from .core import SentinelArchive
 from .csv_import import parse_ohlcv_csv
 from .discord_recorder import DiscordRecorder
 from .models import SimulationConfig
+from .market_data.router import create_market_data_router
+from .market_data.service import MarketDataService
 from .recorder_api import create_recorder_router
 from .recording_store import RecordingStore
 
@@ -63,7 +67,9 @@ def create_app(
     engine_instance = engine or SentinelArchive()
     recorder_store = RecordingStore(recorder_db_path)
     backtest_store = BacktestStore(recorder_db_path)
+    audit_store = AuditStore(recorder_db_path)
     archive_dataset_store = ArchiveDatasetStore(recorder_db_path)
+    market_data_service = MarketDataService()
     bot_suite_store = BotSuiteStore(recorder_db_path)
     discord_recorder = DiscordRecorder(recorder_store)
 
@@ -80,6 +86,7 @@ def create_app(
     async def lifespan(app_instance: FastAPI):
         await recorder_store.initialize()
         await backtest_store.initialize()
+        await audit_store.initialize()
         await archive_dataset_store.initialize()
         await bot_suite_store.initialize()
         app_instance.state.playback_task = asyncio.create_task(playback_loop())
@@ -99,7 +106,9 @@ def create_app(
     app.state.engine = engine_instance
     app.state.recorder_store = recorder_store
     app.state.backtest_store = backtest_store
+    app.state.audit_store = audit_store
     app.state.archive_dataset_store = archive_dataset_store
+    app.state.market_data_service = market_data_service
     app.state.bot_suite_store = bot_suite_store
     app.state.discord_recorder = discord_recorder
     app.state.playback_task = None
@@ -111,8 +120,10 @@ def create_app(
     )
     app.include_router(create_recorder_router(recorder_store, discord_recorder, export_root=recorder_export_root), prefix="/api")
     app.include_router(create_backtest_router(backtest_store), prefix="/api")
+    app.include_router(create_derivatives_router(audit_store), prefix="/api")
     app.include_router(create_archive_presets_router(), prefix="/api")
     app.include_router(create_archive_datasets_router(archive_dataset_store), prefix="/api")
+    app.include_router(create_market_data_router(market_data_service, archive_dataset_store), prefix="/api")
     app.include_router(create_bot_suite_router(bot_suite_store), prefix="/api")
     app.include_router(create_bot_event_bus_router(), prefix="/api")
     app.include_router(create_chrome_bridge_router(recorder_store, discord_recorder), prefix="/api")

@@ -43,7 +43,12 @@ BOT_REGISTRY: dict[str, BotDefinition] = {
     "iron": BotDefinition(
         bot_id="iron",
         repo_path=GITBOTS_ROOT / "Sentinel-Iron",
-        supported_families=("futures_risk_readiness", "margin_readiness", "artifact_import"),
+        supported_families=("futures_risk_readiness", "margin_readiness", "derivatives_differential", "artifact_import"),
+    ),
+    "combination": BotDefinition(
+        bot_id="combination",
+        repo_path=GITBOTS_ROOT / "Sentinel-Combination",
+        supported_families=("futures_risk_readiness", "margin_readiness", "derivatives_differential", "artifact_import"),
     ),
     "core": BotDefinition(
         bot_id="core",

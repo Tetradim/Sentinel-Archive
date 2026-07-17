@@ -39,8 +39,13 @@ import {
   type BacktestRunRecord,
   type BacktestRunRequest,
   type BacktestTrade,
+  type DerivativesReport,
+  type DifferentialAuditReport,
   type DiscordTestResult,
   type ExportRecord,
+  type FuturesContractSpec,
+  type MarketDataFetchResult,
+  type MarketDataProviderInfo,
   type MarketPriceBar,
   type OptionAlert,
   type OptionQuote,
@@ -88,7 +93,19 @@ const defaultCostModel: BacktestCostModel = {
   option_multiplier: 100,
 };
 
-type WorkflowKey = 'builder' | 'history' | 'detail' | 'compare' | 'exports' | 'bots' | 'replay';
+const sampleDerivativesRequest = JSON.stringify({
+  bot_id: 'iron', symbol: 'MES', side: 'long', quantity: 1, starting_equity: 5000, leverage: 10, margin_mode: 'isolated',
+  contract: { symbol: 'MES', venue: 'CME', instrument_type: 'listed_future', contract_multiplier: 5, tick_size: 0.25, quantity_step: 1, minimum_quantity: 1, initial_margin_rate: 0.1, maintenance_margin_rate: 0.08, maximum_leverage: 20 },
+  cost_model: { taker_fee_bps: 0, spread_bps: 0.5, slippage_bps: 1, commission_per_contract: 0.85, exchange_fee_per_contract: 0.35, liquidation_fee_bps: 50 },
+  execution_model: { same_bar_policy: 'adverse_first', maximum_volume_participation: 0.1, allow_partial_fills: true, latency_bars: 0, price_reference: 'trade', gap_stop_fill: 'open', deterministic_seed: 0 },
+  bars: [
+    { timestamp: '2026-07-01T13:30:00Z', symbol: 'MES', open: 5000, high: 5002, low: 4998, close: 5001, volume: 1000 },
+    { timestamp: '2026-07-01T13:31:00Z', symbol: 'MES', open: 5001, high: 5008, low: 4999, close: 5006, volume: 900 },
+  ],
+  funding_events: [], orders: [], stop_loss_pct: 1, take_profit_pct: 2, trailing_stop_pct: 0.75, close_final_position: true,
+}, null, 2);
+
+type WorkflowKey = 'builder' | 'futures' | 'history' | 'detail' | 'compare' | 'exports' | 'bots' | 'replay';
 type Tone = 'good' | 'warn' | 'bad' | 'neutral' | 'purple' | 'gold';
 
 type RankedReport = {
@@ -403,6 +420,19 @@ export function App() {
   const [selectedSuitePlan, setSelectedSuitePlan] = React.useState<SuitePlan | null>(null);
   const [selectedSuiteRun, setSelectedSuiteRun] = React.useState<SuiteRun | null>(null);
 
+  const [marketProviders, setMarketProviders] = React.useState<MarketDataProviderInfo[]>([]);
+  const [contractCatalog, setContractCatalog] = React.useState<Record<string, FuturesContractSpec>>({});
+  const [marketProvider, setMarketProvider] = React.useState('yfinance');
+  const [marketSymbol, setMarketSymbol] = React.useState('MES=F');
+  const [marketAssetClass, setMarketAssetClass] = React.useState<AssetClass>('futures');
+  const [marketInterval, setMarketInterval] = React.useState('5m');
+  const [marketStart, setMarketStart] = React.useState('');
+  const [marketEnd, setMarketEnd] = React.useState('');
+  const [marketDataResult, setMarketDataResult] = React.useState<MarketDataFetchResult | null>(null);
+  const [derivativesRequestText, setDerivativesRequestText] = React.useState(sampleDerivativesRequest);
+  const [derivativesReport, setDerivativesReport] = React.useState<DerivativesReport | null>(null);
+  const [differentialReport, setDifferentialReport] = React.useState<DifferentialAuditReport | null>(null);
+
   const historyPageSize = 10;
 
   const refreshLegacy = React.useCallback(async () => {
@@ -436,12 +466,14 @@ export function App() {
       safety_score_min: historyFilters.safety_score_min,
       safety_score_max: historyFilters.safety_score_max,
     };
-    const [runList, presetCatalog, datasetList, plans, runs] = await Promise.all([
+    const [runList, presetCatalog, datasetList, plans, runs, providerCatalog, contracts] = await Promise.all([
       api.archiveRuns(filters),
       api.archivePresets(),
       api.archiveDatasets({ limit: 50 }),
       api.suitePlans(50),
       api.suiteRuns(50),
+      api.marketDataProviders(),
+      api.derivativesContracts(),
     ]);
     setArchiveRuns(runList.runs);
     setHistoryTotal(runList.total ?? runList.runs.length);
@@ -449,6 +481,8 @@ export function App() {
     setDatasets(datasetList.datasets);
     setSuitePlans(plans.plans);
     setSuiteRuns(runs.runs);
+    setMarketProviders(providerCatalog.providers);
+    setContractCatalog(contracts.contracts);
     setSelectedArchiveRun((current) => current || runList.runs[0] || null);
     setSelectedSuitePlan((current) => current || plans.plans[0] || null);
     setSelectedSuiteRun((current) => current || runs.runs[0] || null);
@@ -668,6 +702,7 @@ export function App() {
 
   const workflowItems: Array<{ key: WorkflowKey; label: string; icon: React.ReactNode; help: string }> = [
     { key: 'builder', label: 'Plan', icon: <Workflow size={22} />, help: 'Backtest, sweeps, walk-forward, stress' },
+    { key: 'futures', label: 'Futures', icon: <ShieldAlert size={22} />, help: 'Market data, margin simulation, differential audit' },
     { key: 'history', label: 'History', icon: <History size={22} />, help: 'Filters and pagination' },
     { key: 'detail', label: 'Detail', icon: <ClipboardList size={22} />, help: 'Report and composite payloads' },
     { key: 'compare', label: 'Ranks', icon: <Trophy size={22} />, help: 'Compare reports across runs' },
@@ -706,7 +741,7 @@ export function App() {
             <span className="title-dot" />
             <div>
               <h1>Archive Research Console</h1>
-              <p>Plan Builder · Run History · Report Detail · Compare/Ranks · Exports · Bot Evidence</p>
+              <p>Plan Builder · Futures Lab · Run History · Compare/Ranks · Bot Evidence</p>
             </div>
           </div>
           <div className="ticker-strip" aria-label="Archive summary">
@@ -764,6 +799,7 @@ export function App() {
 
         <main className="workspace">
           {workflow === 'builder' ? renderBuilderWorkflow() : null}
+          {workflow === 'futures' ? renderFuturesWorkflow() : null}
           {workflow === 'history' ? renderHistoryWorkflow() : null}
           {workflow === 'detail' ? renderDetailWorkflow() : null}
           {workflow === 'compare' ? renderCompareWorkflow() : null}
@@ -930,6 +966,126 @@ export function App() {
               })}>Run Stress</button>
             </div>
           </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderFuturesWorkflow() {
+    const combined = differentialReport?.combined_assessment;
+    const metrics = derivativesReport?.metrics;
+    return (
+      <div className="workflow-grid">
+        <section className="glass-panel panel-card span-5">
+          <PanelHeader icon={<Database size={18} />} title="Recorded Market Data" subtitle="Free adapters normalize bars and funding into fingerprinted Archive datasets." />
+          <div className="ticket-grid two-col">
+            <label>Provider
+              <select value={marketProvider} onChange={(event) => setMarketProvider(event.target.value)}>
+                {marketProviders.filter((item) => item.provider_id !== 'csv_upload').map((item) => <option value={item.provider_id} key={item.provider_id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label>Asset
+              <select value={marketAssetClass} onChange={(event) => setMarketAssetClass(event.target.value as AssetClass)}>
+                <option value="futures">listed futures</option><option value="crypto_futures">crypto futures</option><option value="stock">stock / ETF</option><option value="crypto">crypto spot</option>
+              </select>
+            </label>
+            <label>Symbol <input value={marketSymbol} onChange={(event) => setMarketSymbol(event.target.value.toUpperCase())} /></label>
+            <label>Interval <input value={marketInterval} onChange={(event) => setMarketInterval(event.target.value)} /></label>
+            <label>Start <input value={marketStart} onChange={(event) => setMarketStart(event.target.value)} placeholder="2026-07-01T13:30:00Z" /></label>
+            <label>End <input value={marketEnd} onChange={(event) => setMarketEnd(event.target.value)} placeholder="2026-07-01T20:00:00Z" /></label>
+          </div>
+          <div className="button-row">
+            <button className="primary-btn" type="button" onClick={() => archiveRun('Fetching market data', async () => {
+              const result = await api.fetchMarketData({ provider: marketProvider, symbol: marketSymbol, asset_class: marketAssetClass, interval: marketInterval, start: marketStart || null, end: marketEnd || null, limit: 5000, include_funding: true, save_dataset: true });
+              setMarketDataResult(result);
+            })}>Fetch + Save</button>
+            <button className="secondary-btn" type="button" disabled={!marketDataResult} onClick={() => {
+              if (!marketDataResult) return;
+              const request = JSON.parse(derivativesRequestText) as Record<string, unknown>;
+              const requestSymbol = String(request.symbol || marketDataResult.symbol).toUpperCase();
+              request.bars = marketDataResult.bars.map((bar) => ({ ...bar, symbol: requestSymbol }));
+              request.funding_events = marketDataResult.funding_events;
+              request.metadata = { ...(request.metadata as Record<string, unknown> || {}), dataset_id: marketDataResult.dataset_id, source_fingerprint: marketDataResult.fingerprint };
+              setDerivativesRequestText(JSON.stringify(request, null, 2));
+            }}>Use in Audit</button>
+          </div>
+          {marketDataResult ? (
+            <div className="result-stack">
+              <div className="result-card"><span>{marketDataResult.provider}</span><strong>{marketDataResult.symbol} · {marketDataResult.interval}</strong><em>{marketDataResult.bars.length} bars · {marketDataResult.funding_events.length} funding events</em><small>{marketDataResult.dataset_id || marketDataResult.fingerprint}</small></div>
+              <Warnings warnings={marketDataResult.warnings} />
+            </div>
+          ) : <EmptyState label="Choose a provider and fetch a recorded interval." />}
+          <div className="mini-section">
+            <h3>Free provider catalog</h3>
+            <div className="chip-stack">{marketProviders.map((provider) => <a className="chip-btn" href={provider.homepage} target="_blank" rel="noreferrer" key={provider.provider_id}>{provider.provider_id}</a>)}</div>
+          </div>
+        </section>
+
+        <section className="glass-panel panel-card span-7">
+          <PanelHeader icon={<ShieldCheck size={18} />} title="Derivatives Audit Engine" subtitle="Deterministic order, margin, liquidation, fee, liquidity, bracket, gap, and OCO simulation." />
+          <div className="mini-section">
+            <h3>Contract research defaults</h3>
+            <div className="chip-stack">{Object.entries(contractCatalog).map(([id, contract]) => <button className="chip-btn" type="button" key={id} onClick={() => {
+              const request = JSON.parse(derivativesRequestText) as Record<string, unknown>;
+              request.contract = contract;
+              request.symbol = contract.symbol;
+              request.bot_id = contract.instrument_type === 'listed_future' ? 'iron' : 'chain';
+              setDerivativesRequestText(JSON.stringify(request, null, 2));
+            }}>{id}</button>)}</div>
+          </div>
+          <label className="field">Complete deterministic audit request
+            <textarea className="data-textarea futures-request" value={derivativesRequestText} onChange={(event) => setDerivativesRequestText(event.target.value)} spellCheck={false} />
+          </label>
+          <div className="button-row">
+            <button className="primary-btn" type="button" onClick={() => archiveRun('Running derivatives audit', async () => {
+              const report = await api.runDerivatives(JSON.parse(derivativesRequestText) as Record<string, unknown>);
+              setDerivativesReport(report);
+              setDifferentialReport(null);
+            })}>Run Bot Audit</button>
+            <button className="secondary-btn" type="button" onClick={() => archiveRun('Comparing Iron, Chain, Combination', async () => {
+              const base = JSON.parse(derivativesRequestText) as Record<string, unknown>;
+              const orders = Array.isArray(base.orders) ? base.orders : [];
+              const report = await api.compareDerivatives({ name: 'Iron / Chain / Combination deterministic replay', base_request: base, layers: [
+                { layer_id: 'iron', label: 'Iron', bot_id: 'iron', orders },
+                { layer_id: 'chain', label: 'Chain', bot_id: 'chain', orders },
+                { layer_id: 'combination', label: 'Combination', bot_id: 'combination', orders },
+              ] });
+              setDifferentialReport(report);
+              setDerivativesReport(null);
+            })}>Run 3-Layer Comparison</button>
+          </div>
+        </section>
+
+        <section className="glass-panel panel-card span-12">
+          <PanelHeader icon={<Gauge size={18} />} title="Safety Verdict" subtitle="Agreement is parity evidence—not proof—so shared assumptions remain visible." />
+          {derivativesReport && metrics ? (
+            <>
+              <div className="metric-grid compact">
+                <Metric label="Ending equity" value={money(metrics.ending_equity)} tone={Number(metrics.net_pnl) >= 0 ? 'good' : 'bad'} />
+                <Metric label="Net PnL" value={money(metrics.net_pnl)} tone={Number(metrics.net_pnl) >= 0 ? 'good' : 'bad'} />
+                <Metric label="Drawdown" value={pct(metrics.maximum_drawdown_pct)} tone={Number(metrics.maximum_drawdown_pct) > 20 ? 'bad' : 'warn'} />
+                <Metric label="Safety" value={number(metrics.safety_score, 0)} tone={Number(metrics.safety_score) >= 70 ? 'good' : 'bad'} />
+                <Metric label="Liquidations" value={number(metrics.liquidation_count, 0)} tone={Number(metrics.liquidation_count) ? 'bad' : 'good'} />
+                <Metric label="Potential debt" value={money(metrics.potential_debt)} tone={Number(metrics.potential_debt) ? 'bad' : 'good'} />
+              </div>
+              <Warnings warnings={[...derivativesReport.warnings, ...((metrics.safety_flags as string[]) || [])]} />
+              <pre className="json-preview large">{JSON.stringify(derivativesReport.executions, null, 2)}</pre>
+            </>
+          ) : null}
+          {differentialReport && combined ? (
+            <>
+              <div className="metric-grid compact">
+                <Metric label="Verdict" value={String(combined.verdict)} tone={combined.verdict === 'parity_observed' ? 'good' : 'bad'} />
+                <Metric label="Agreement" value={number(combined.agreement_score, 1)} tone={Number(combined.agreement_score) >= 90 ? 'good' : 'warn'} />
+                <Metric label="Critical" value={number(combined.critical_divergence_count, 0)} tone={Number(combined.critical_divergence_count) ? 'bad' : 'good'} />
+                <Metric label="Warnings" value={number(combined.warning_divergence_count, 0)} tone={Number(combined.warning_divergence_count) ? 'warn' : 'good'} />
+                <Metric label="Worst debt" value={money(combined.worst_potential_debt)} tone={Number(combined.worst_potential_debt) ? 'bad' : 'good'} />
+                <Metric label="Min safety" value={number(combined.minimum_safety_score, 0)} tone={Number(combined.minimum_safety_score) >= 70 ? 'good' : 'bad'} />
+              </div>
+              <pre className="json-preview large">{JSON.stringify({ combined, divergences: differentialReport.divergences, layers: differentialReport.layers }, null, 2)}</pre>
+            </>
+          ) : null}
+          {!derivativesReport && !differentialReport ? <EmptyState label="Run one bot or the three-layer comparison to see executable evidence." /> : null}
         </section>
       </div>
     );
@@ -1126,7 +1282,7 @@ export function App() {
           </div>
         </section>
         <section className="glass-panel panel-card span-7">
-          <PanelHeader icon={<ShieldAlert size={18} />} title="Bot Evidence" subtitle="Planner currently creates safe planned/passed/skipped records; it does not execute native repo commands yet." />
+          <PanelHeader icon={<ShieldAlert size={18} />} title="Bot Evidence" subtitle="Repository discovery is reported as warning evidence until a native adapter actually executes; presence alone never passes a bot." />
           <div className="suite-columns">
             <div>
               <h3>Plans</h3>
@@ -1287,6 +1443,10 @@ function PanelHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: 
 
 function Ticker({ label, value, sub, tone = 'neutral' }: { label: string; value: string; sub: string; tone?: Tone }) {
   return <article className={`ticker ${tone}`}><b>{label}</b><strong>{value}</strong><span>{sub}</span></article>;
+}
+
+function Metric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: Tone }) {
+  return <article className={`kpi-card ${tone}`}><span>{label}</span><strong>{value}</strong></article>;
 }
 
 function ChannelChips({ ids, emptyLabel }: { ids: string[]; emptyLabel: string }) {

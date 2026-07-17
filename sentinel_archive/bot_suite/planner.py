@@ -56,11 +56,11 @@ def build_suite_run(plan: SuitePlan) -> SuiteRun:
         jobs.append(
             job.model_copy(
                 update={
-                    "status": "passed",
+                    "status": "warning",
                     "evidence": {
-                        "mode": "test_only",
+                        "mode": "adapter_required",
                         "execution": "none",
-                        "message": "Repo path is available; executable adapter hooks are intentionally plan-gated.",
+                        "message": "Repository presence was verified, but no bot adapter executed. Use the derivatives differential audit for executable evidence.",
                     },
                 }
             )

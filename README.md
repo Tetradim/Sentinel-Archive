@@ -1,6 +1,6 @@
 # Sentinel Archive
 
-Local recorded-market simulation, Edge/Pulse contract testing, Discord options alert recording, and Sentinel Echo replay data generation.
+Local recorded-market simulation, deterministic futures audits, Edge/Pulse contract testing, Discord options alert recording, and Sentinel Echo replay data generation.
 
 This project is intentionally local-first. It can stand in for Sentinel Edge, Sentinel Pulse, or both at the same time, while also recording Discord options alerts and market observations for later bot testing.
 
@@ -34,6 +34,9 @@ C:\Users\Lite OS\Documents\Codex\2026-06-12\c-users-lite-os-openclaw-workspace\w
 | Market state | Maintains current replay prices per symbol and exposes quote/price endpoints. |
 | Simulated account | Tracks cash, equity, buying power, open positions, average entry, current price, P&L, trailing state, and day P&L. |
 | Execution assumptions | Configurable starting cash, quantity, allocation cap, fill ratio, slippage, commission, confidence threshold, regular stop, trailing stop, and take-profit rules. |
+| Futures audit engine | Deterministic listed-future and crypto-perpetual replay with leverage, initial/maintenance margin, liquidation, potential debt, funding, commissions, exchange fees, bid/ask spread, slippage, liquidity-limited fills, order rejection, gaps, brackets, trailing stops, OCO events, tick sizes, and contract multipliers. |
+| Differential audit | Replays Iron, Chain, Combination, or custom order streams against one immutable dataset and reports the first execution/P&L/safety divergence plus a combined verdict. |
+| Market data adapters | Normalizes free yfinance, Stooq, Alpaca IEX, Alpha Vantage, Twelve Data, Binance Futures, Bybit Futures, BitUnix Futures, and Coinbase data into fingerprinted datasets. |
 | Handoff contract | Accepts `edge.pulse.handoff.v1` through native and Pulse-compatible endpoints. |
 | Action coverage | Handles buy, sell, DCA, regular stop, trailing stop, tighten trailing stop, opening trailing stop, stop all, emergency exit, and stop buying. |
 | Risk exits | Applies replay-bar high/low checks for regular stop, take profit, and trailing stop exits. |
@@ -46,6 +49,7 @@ C:\Users\Lite OS\Documents\Codex\2026-06-12\c-users-lite-os-openclaw-workspace\w
 | Market capture | Imports option and stock price CSVs, optionally enriches with yfinance, snapshots alert-time option and stock prices, and calculates drift. |
 | Sentinel Echo replay | Publishes joined replay events for Sentinel Echo and writes JSONL test-run manifests. |
 | Control panel | React/Vite dashboard for replay, simulated handoffs, recorder setup, imports, exports, Sentinel Echo replay, positions, and event tape. |
+| Futures Lab UI | Fetches market data, applies editable contract templates, runs one-bot audits or three-layer Iron/Chain/Combination comparisons, and exposes execution evidence. |
 | Windows launcher | Starts FastAPI, optionally rebuilds UI, opens a dedicated browser profile, and stops the process when the browser closes. |
 
 ## Architecture
@@ -170,6 +174,9 @@ Manual launch options:
 | `SIMULATION_EVENT_BUS_SECRET` | Required shared secret for `/api/bus/events`; clients must send it in `X-Simulation-Event-Bus-Secret`. The configured value must be non-placeholder and at least 32 characters. |
 | `BOT_EVENT_BUS_DIR` | Optional local directory for JSONL cross-bot event records. |
 | `PULSE_EDGE_API_KEY` | Not required by this app; Pulse-compatible routes use the built-in local key below. |
+| `ALPACA_API_KEY`, `ALPACA_API_SECRET` | Optional free Alpaca IEX historical-data credentials. |
+| `ALPHA_VANTAGE_API_KEY` | Optional free Alpha Vantage credential. |
+| `TWELVE_DATA_API_KEY` | Optional free Twelve Data credential. |
 
 Pulse-compatible routes require:
 
@@ -182,6 +189,8 @@ The UI sends this key automatically for handoff composer requests.
 ## Control Panel Guide
 
 The FastAPI app serves the built React UI from `dist/`. It polls `/api/simulation/state` and recorder endpoints roughly every 1.5 seconds.
+
+The **Futures** workflow is documented in [docs/DERIVATIVES_AUDIT_LAB.md](docs/DERIVATIVES_AUDIT_LAB.md). It is a research simulator, not a broker connection, exchange risk engine, or guarantee against loss.
 
 ### Top Metrics
 

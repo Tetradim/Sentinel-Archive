@@ -11,7 +11,14 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from sentinel_archive.backtesting.models import AssetClass, MarketPriceBar, OptionAlert, OptionQuote
+from sentinel_archive.backtesting.models import (
+    AssetClass,
+    FundingEvent,
+    FuturesContractSpec,
+    MarketPriceBar,
+    OptionAlert,
+    OptionQuote,
+)
 
 
 class ArchiveDatasetCreateRequest(BaseModel):
@@ -19,6 +26,8 @@ class ArchiveDatasetCreateRequest(BaseModel):
     asset_class: AssetClass
     symbol: str
     bars: list[MarketPriceBar] = Field(default_factory=list)
+    funding_events: list[FundingEvent] = Field(default_factory=list)
+    contract_spec: FuturesContractSpec | None = None
     option_alerts: list[OptionAlert] = Field(default_factory=list)
     option_quotes: list[OptionQuote] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -32,6 +41,8 @@ class ArchiveDatasetRecord(BaseModel):
     symbol: str
     fingerprint: str
     bars: list[MarketPriceBar] = Field(default_factory=list)
+    funding_events: list[FundingEvent] = Field(default_factory=list)
+    contract_spec: FuturesContractSpec | None = None
     option_alerts: list[OptionAlert] = Field(default_factory=list)
     option_quotes: list[OptionQuote] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -128,6 +139,8 @@ def create_dataset_record(request: ArchiveDatasetCreateRequest) -> ArchiveDatase
         symbol=request.symbol.upper(),
         fingerprint=fingerprint,
         bars=request.bars,
+        funding_events=request.funding_events,
+        contract_spec=request.contract_spec,
         option_alerts=request.option_alerts,
         option_quotes=request.option_quotes,
         metadata=request.metadata,

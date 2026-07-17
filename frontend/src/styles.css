@@ -246,6 +246,7 @@ input, select, textarea {
 }
 textarea { min-height: 170px; resize: vertical; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; }
 textarea.compact-textarea { min-height: 74px; }
+textarea.futures-request { min-height: 420px; }
 textarea.channel-filter { min-height: 52px; }
 input:focus, select:focus, textarea:focus { border-color: var(--gold-bright); box-shadow: 0 0 0 3px rgba(227, 182, 77, 0.1); }
 
@@ -270,6 +271,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--gold-bright); bo
 .wide-button { width: 100%; }
 .button-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .button-row.shrink { justify-content: end; }
+.metric-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 
 .preset-strip, .assumption-row, .chip-stack, .suite-export-row, .file-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .preset-strip { margin-bottom: 12px; }
